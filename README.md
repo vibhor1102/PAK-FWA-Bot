@@ -7,7 +7,7 @@ A small Python Discord bot scaffold designed for Render free-tier hosting and up
 - `bot/main.py` contains the Discord bot, slash-command registration, and HTTP health server.
 - `bot/__main__.py` lets Render run the app with `python -m bot`.
 - `requirements.txt` pins the Python dependencies.
-- `.python-version` tells Render to use Python 3.12.13 instead of Render's newer default Python, which currently removes the `audioop` module imported by `discord.py` 2.4.
+- `runtime.txt` tells Render which Python version to use.
 - `render.yaml` documents the Render web service settings if you later want to use Render Blueprints.
 - `.env.example` documents the environment variables you need without committing secrets.
 
@@ -40,7 +40,6 @@ If you are configuring the Render web service manually, use:
 - **Build command:** `pip install -r requirements.txt`
 - **Start command:** `python -m bot`
 - **Health check path:** `/health`
-- **Environment variable:** `PYTHON_VERSION=3.12.13` if Render does not automatically pick up `.python-version`
 - **Plan:** Free is fine for this starter app.
 
 After deploy, your service URL should return a simple response at `/` and JSON at `/health`.
@@ -50,9 +49,8 @@ After deploy, your service URL should return a simple response at `/` and JSON a
 1. Open your Render web service.
 2. Go to **Environment**.
 3. Add `DISCORD_TOKEN` with your bot token as the value.
-4. Confirm the deploy log says it is using Python `3.12.13`. If it still uses Render's default Python, add `PYTHON_VERSION=3.12.13`.
-5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
-6. Save changes and redeploy/restart the service.
+4. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
+5. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
 
@@ -120,6 +118,5 @@ When `DISCORD_GUILD_ID` is set, the bot registers commands only to that server a
 
 - A missing `DISCORD_TOKEN` will stop the app on startup; add it in Render Environment settings.
 - An invalid `DISCORD_GUILD_ID` must be corrected or removed; it should contain only the numeric Discord server ID.
-- If Render says `ModuleNotFoundError: No module named 'audioop'`, the service is running Python 3.13 or newer. Confirm `.python-version` is committed and/or set `PYTHON_VERSION=3.12.13` in Render.
 - If Render says the port is unavailable, make sure the start command is `python -m bot`; the app reads Render's `PORT` environment variable automatically.
 - If UptimeRobot reports failures, check both `/` and `/health` on the Render service URL and inspect Render logs.
