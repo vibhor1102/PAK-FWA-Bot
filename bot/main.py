@@ -1,7 +1,15 @@
 import asyncio
 import logging
 import os
+import sys
 from typing import Any
+
+if sys.version_info >= (3, 13):
+    raise RuntimeError(
+        "PAK FWA Bot must run on Python 3.12.x. "
+        "discord.py 2.4 imports the stdlib audioop module, which was removed in Python 3.13. "
+        "On Render, set PYTHON_VERSION=3.12.13 or keep the repo-root .python-version file."
+    )
 
 import discord
 from aiohttp import web
