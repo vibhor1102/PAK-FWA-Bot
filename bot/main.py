@@ -15,6 +15,7 @@ from discord.ext import commands
 from .config import AppConfig
 from .coc_service import CocService
 from .database import Database
+from .fwa_sources import FwaFarmService, FwaStatsService
 from .registry import build_feature_specs
 from .settings_data import build_settings_snapshot
 from .state import AppState
@@ -117,11 +118,17 @@ async def run() -> None:
     database = Database(config.database_url)
     await database.connect()
     coc_service = CocService(config)
+    fwa_service = FwaFarmService()
+    fwa_stats_service = FwaStatsService()
+    await fwa_service.start()
+    await fwa_stats_service.start()
 
     state = AppState(
         config=config,
         database=database,
         coc_service=coc_service,
+        fwa_service=fwa_service,
+        fwa_stats_service=fwa_stats_service,
         feature_specs=build_feature_specs(),
     )
 
@@ -131,11 +138,17 @@ async def run() -> None:
     try:
         await bot.start(config.discord_token)
     finally:
+        LOGGER.info("Shutting down PAK FWA Bot...")
         await runner.cleanup()
         await coc_service.close()
+        await fwa_service.close()
+        await fwa_stats_service.close()
         await database.close()
         await bot.close()
 
 
 def main() -> None:
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        LOGGER.info("PAK FWA Bot stopped cleanly.")

@@ -20,7 +20,7 @@ def build_help_command() -> app_commands.Command[Any, ..., None]:
         )
         embed.add_field(
             name="/clanreport",
-            value="Pulls a detailed Clash of Clans clan, war, and member report.",
+            value="Pulls a detailed Clash of Clans clan, war, member, and FWA Stats report. Optional compare tag supported.",
             inline=False,
         )
         embed.set_footer(text="PAK FWA Bot")

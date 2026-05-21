@@ -12,6 +12,14 @@ import discord
 from discord import app_commands
 
 from ..coc_service import CocConfigurationError
+from ..fwa_sources import (
+    FwaExternalIntel,
+    compare_fwa_records,
+    compare_fwa_stats_records,
+    render_fwa_stats_section,
+    render_cc_section,
+    render_points_section,
+)
 
 
 @dataclass(slots=True)
@@ -19,12 +27,20 @@ class ClanReportData:
     clan: coc.Clan
     war: coc.ClanWar | None
     members: list[coc.Player]
+    external: FwaExternalIntel | None
     text: str
 
 
 def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
     @app_commands.describe(clan_tag="The clan tag to inspect, with or without the # prefix.")
-    async def clan_report_callback(interaction: discord.Interaction, clan_tag: str) -> None:
+    @app_commands.describe(
+        comparison_tag="Optional second clan tag to compare against. If omitted, the current war opponent is used when available.",
+    )
+    async def clan_report_callback(
+        interaction: discord.Interaction,
+        clan_tag: str,
+        comparison_tag: str | None = None,
+    ) -> None:
         bot = interaction.client
         if bot is None or not hasattr(bot, "state"):
             await interaction.response.send_message(
@@ -36,7 +52,7 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
-            report = await build_clan_report(bot.state.coc_service, clan_tag)
+            report = await build_clan_report(bot.state, clan_tag, comparison_tag)
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
@@ -78,8 +94,8 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
     )
 
 
-async def build_clan_report(service, clan_tag: str) -> ClanReportData:
-    client = await service.get_client()
+async def build_clan_report(state, clan_tag: str, comparison_tag: str | None = None) -> ClanReportData:
+    client = await state.coc_service.get_client()
     normalized_tag = _normalize_clan_tag(clan_tag)
     clan = await client.get_clan(normalized_tag)
 
@@ -87,8 +103,15 @@ async def build_clan_report(service, clan_tag: str) -> ClanReportData:
     current_war_task = asyncio.create_task(client.get_current_war(normalized_tag))
     members, war = await asyncio.gather(detailed_members_task, current_war_task)
 
-    text = build_report_text(clan, war, members)
-    return ClanReportData(clan=clan, war=war, members=members, text=text)
+    secondary_tag = comparison_tag or (war.opponent.tag if war is not None else None)
+    external = await state.fwa_service.build_external_intel(
+        normalized_tag,
+        secondary_tag,
+        stats_service=state.fwa_stats_service,
+    )
+
+    text = build_report_text(clan, war, members, external)
+    return ClanReportData(clan=clan, war=war, members=members, external=external, text=text)
 
 
 async def _collect_detailed_members(clan: coc.Clan) -> list[coc.Player]:
@@ -102,6 +125,7 @@ def build_summary_embed(report: ClanReportData) -> discord.Embed:
     clan = report.clan
     war = report.war
     members = report.members
+    external = report.external
 
     roster_count = len(members)
     total_trophies = sum(member.trophies for member in members)
@@ -161,6 +185,38 @@ def build_summary_embed(report: ClanReportData) -> discord.Embed:
         inline=False,
     )
 
+    if external is not None and external.primary_points is not None:
+        comparison_lines = compare_fwa_records(external.primary_points, external.secondary_points)
+        cc_lines: list[str] = []
+        stats_lines: list[str] = []
+        if external.primary_cc is not None:
+            cc_lines.append(
+                f"CC status: {external.primary_cc.source_status}"
+                + (f", flags: {len(external.primary_cc.labels)}" if external.primary_cc.labels else "")
+            )
+        if external.secondary_cc is not None:
+            cc_lines.append(
+                f"Opponent CC status: {external.secondary_cc.source_status}"
+                + (f", flags: {len(external.secondary_cc.labels)}" if external.secondary_cc.labels else "")
+            )
+        if external.primary_stats is not None:
+            stats_lines.append(
+                f"FWA Stats status: {external.primary_stats.source_status}"
+                + (f" ({len(external.primary_stats.members)} members)" if external.primary_stats.members else "")
+            )
+        if external.secondary_stats is not None:
+            stats_lines.append(
+                f"Opponent FWA Stats status: {external.secondary_stats.source_status}"
+                + (f" ({len(external.secondary_stats.members)} members)" if external.secondary_stats.members else "")
+            )
+        stats_lines.extend(compare_fwa_stats_records(external.primary_stats, external.secondary_stats))
+
+        embed.add_field(
+            name="FWA Sources",
+            value="\n".join((comparison_lines + stats_lines + cc_lines)[:10]) or "No external FWA data could be loaded.",
+            inline=False,
+        )
+
     if war is None:
         embed.add_field(
             name="Current War",
@@ -207,7 +263,8 @@ def build_summary_embed(report: ClanReportData) -> discord.Embed:
         name="Data Limits",
         value=(
             "The official API does not expose the hidden base-layout export, war weight, or exact defensive layout placement. "
-            "This report instead uses TH level, war participation, attacks, destruction, hero/troop levels, and roster stats."
+            "This report instead uses TH level, war participation, attacks, destruction, hero/troop levels, roster stats, "
+            "and public FWA database lookups for point and status context."
         ),
         inline=False,
     )
@@ -215,7 +272,12 @@ def build_summary_embed(report: ClanReportData) -> discord.Embed:
     return embed
 
 
-def build_report_text(clan: coc.Clan, war: coc.ClanWar | None, members: list[coc.Player]) -> str:
+def build_report_text(
+    clan: coc.Clan,
+    war: coc.ClanWar | None,
+    members: list[coc.Player],
+    external: FwaExternalIntel | None,
+) -> str:
     members_by_tag = {member.tag: member for member in members}
     lines: list[str] = []
 
@@ -245,12 +307,67 @@ def build_report_text(clan: coc.Clan, war: coc.ClanWar | None, members: list[coc
         lines.extend(_format_war_roster(war, members_by_tag))
     lines.append("")
 
+    if external is not None:
+        lines.append("FWA POINTS DATABASE")
+        if external.primary_points is not None:
+            lines.extend(render_points_section(external.primary_points, heading="Primary clan point lookup"))
+        else:
+            lines.append("Primary clan point lookup unavailable.")
+        lines.append("")
+
+        if external.secondary_tag is not None:
+            lines.append("OPPONENT POINTS DATABASE")
+            if external.secondary_points is not None:
+                lines.extend(render_points_section(external.secondary_points, heading="Opponent point lookup"))
+            else:
+                lines.append("Opponent point lookup unavailable.")
+            lines.append("")
+
+        lines.append("POINT COMPARISON")
+        lines.extend(compare_fwa_records(external.primary_points, external.secondary_points))
+        lines.append("")
+
+        lines.append("CC STATUS LOOKUP")
+        if external.primary_cc is not None:
+            lines.extend(render_cc_section(external.primary_cc, heading="Primary clan CC lookup"))
+        else:
+            lines.append("Primary clan CC lookup unavailable.")
+        lines.append("")
+        if external.secondary_tag is not None:
+            if external.secondary_cc is not None:
+                lines.extend(render_cc_section(external.secondary_cc, heading="Opponent clan CC lookup"))
+            else:
+                lines.append("Opponent clan CC lookup unavailable.")
+            lines.append("")
+
+        lines.append("FWA STATS DATABASE")
+        if external.primary_stats is not None:
+            lines.extend(render_fwa_stats_section(external.primary_stats, heading="Primary clan FWA Stats lookup"))
+        else:
+            lines.append("Primary clan FWA Stats lookup unavailable.")
+        lines.append("")
+
+        if external.secondary_tag is not None:
+            if external.secondary_stats is not None:
+                lines.extend(render_fwa_stats_section(external.secondary_stats, heading="Opponent clan FWA Stats lookup"))
+            else:
+                lines.append("Opponent clan FWA Stats lookup unavailable.")
+            lines.append("")
+
+        lines.append("FWA STATS COMPARISON")
+        lines.extend(compare_fwa_stats_records(external.primary_stats, external.secondary_stats))
+        lines.append("")
+
     lines.append("FULL MEMBER DETAILS")
+    stats_members_by_tag = {
+        member.tag: member
+        for member in (external.primary_stats.members if external is not None and external.primary_stats is not None else ())
+    }
     for member in sorted(
         members,
         key=lambda item: (-item.town_hall, -item.trophies, item.name.lower(), item.tag),
     ):
-        lines.extend(_format_player_detail(member))
+        lines.extend(_format_player_detail(member, stats_members_by_tag.get(member.tag)))
         lines.append("")
 
     lines.append("LIMITATIONS")
@@ -445,7 +562,7 @@ def _format_war_member(member: coc.ClanWarMember, player: coc.Player | None) -> 
     return lines
 
 
-def _format_player_detail(player: coc.Player) -> list[str]:
+def _format_player_detail(player: coc.Player, fwa_stats_member: Any | None = None) -> list[str]:
     lines = [
         f"[{player.town_hall}] {player.name} ({player.tag})",
         f"  Share link: {player.share_link}",
@@ -470,6 +587,13 @@ def _format_player_detail(player: coc.Player) -> list[str]:
         f"  Town hall weapon: {getattr(player, 'town_hall_weapon', 'n/a')}",
         f"  Clan capital contributions: {getattr(player, 'clan_capital_contributions', 'n/a')}",
     ]
+
+    if fwa_stats_member is not None:
+        lines.append(f"  FWA Stats weight: {format_optional_int(getattr(fwa_stats_member, 'weight', None))}")
+        lines.append(f"  FWA Stats member rank: {format_optional_int(getattr(fwa_stats_member, 'rank', None))}")
+        lines.append(f"  FWA Stats in war: {yes_no(getattr(fwa_stats_member, 'in_war', False))}")
+        if getattr(fwa_stats_member, "league", None):
+            lines.append(f"  FWA Stats league: {getattr(fwa_stats_member, 'league')}")
 
     legend_statistics = getattr(player, "legend_statistics", None)
     if legend_statistics is not None:
