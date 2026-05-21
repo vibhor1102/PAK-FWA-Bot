@@ -1,33 +1,40 @@
 # PAK FWA Bot
 
-A small Python Discord bot scaffold designed for Render free-tier hosting and uptime pings from UptimeRobot.
+A configurable Python Discord bot scaffold with local `.env` support, Render production env vars, a Postgres layer, and feature gates for local/testing/production-only behavior.
 
 ## Architecture
 
-- `bot/main.py` contains the Discord bot, slash-command registration, and HTTP health server.
-- `bot/__main__.py` lets Render run the app with `python -m bot`.
-- `requirements.txt` pins the Python dependencies.
-- `runtime.txt` tells Render which Python version to use.
-- `render.yaml` documents the Render web service settings if you later want to use Render Blueprints.
-- `.env.example` documents the environment variables you need without committing secrets.
+- `bot/config.py` loads runtime mode, local `.env`, and environment variables.
+- `bot/state.py` keeps shared app state in one place.
+- `bot/features.py` and `bot/registry.py` gate commands by deployment target.
+- `bot/database.py` wraps PostgreSQL access.
+- `bot/commands/` holds slash-command modules.
+- `bot/settings_data.py` powers both the `/settings` command and the `/settings` HTTP route.
+- `bot/main.py` wires everything together.
+- `render.yaml` defines the Render web service and Postgres database.
+- `.env.example` documents local and deployment variables without secrets.
 
 ## What is included
 
 - `discord.py` bot runtime.
-- A `/help` slash command that replies with a small placeholder embed.
+- A `/help` slash command.
+- A `/settings` slash command and matching `/settings` HTTP route.
 - An `aiohttp` web server with:
   - `GET /` for a simple awake message.
   - `GET /health` for Render/UptimeRobot health checks.
+  - `GET /settings` for a safe JSON config snapshot.
 - Render-ready commands and optional `render.yaml` blueprint.
 
 ## Required environment variables
 
-Configure these in Render under **Web Service > Environment**:
+Configure these locally in `.env` and in Render under **Web Service > Environment**:
 
 | Variable | Required | Where to get it | Notes |
 | --- | --- | --- | --- |
+| `BOT_RUNTIME` | No | Local choice or Render env var | Use `local`, `testing`, or `production` to control feature gates. |
 | `DISCORD_TOKEN` | Yes | Discord Developer Portal > your application > Bot > Token | Keep this secret. Never commit it to GitHub. |
 | `DISCORD_GUILD_ID` | No | Discord client with Developer Mode enabled > right-click your server > Copy Server ID | Recommended while developing because guild commands update quickly. Remove later for global commands. |
+| `DATABASE_URL` | No now, yes later | Render Postgres or local PostgreSQL | The app is ready for Postgres-backed features even before they are all added. |
 | `PORT` | No | Render sets this automatically | Only set manually for local development if needed. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
@@ -42,15 +49,17 @@ If you are configuring the Render web service manually, use:
 - **Health check path:** `/health`
 - **Plan:** Free is fine for this starter app.
 
-After deploy, your service URL should return a simple response at `/` and JSON at `/health`.
+After deploy, your service URL should return a simple response at `/`, JSON at `/health`, and a safe config snapshot at `/settings`.
 
 ### Render environment setup
 
 1. Open your Render web service.
 2. Go to **Environment**.
-3. Add `DISCORD_TOKEN` with your bot token as the value.
-4. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
-5. Save changes and redeploy/restart the service.
+3. Add `BOT_RUNTIME=production`.
+4. Add `DISCORD_TOKEN` with your bot token as the value.
+5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
+6. Attach or create a Render Postgres database and let `DATABASE_URL` point at its connection string.
+7. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
 
@@ -110,9 +119,19 @@ You said you can manage these, but make sure the following are done:
    curl http://localhost:3000/health
    ```
 
+6. Check the live settings snapshot:
+
+   ```bash
+   curl http://localhost:3000/settings
+   ```
+
 ## Slash command registration note
 
 When `DISCORD_GUILD_ID` is set, the bot registers commands only to that server and updates should appear quickly. When `DISCORD_GUILD_ID` is unset, the bot registers global commands, which can take longer to appear across Discord.
+
+## Feature gating
+
+`BOT_RUNTIME` controls whether a feature should behave as local, testing, or production. New features can declare a visibility with `FeatureVisibility` and get skipped automatically in modes they do not support.
 
 ## Troubleshooting reminders
 

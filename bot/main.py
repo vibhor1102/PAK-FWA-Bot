@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import os
 import sys
-from typing import Any
 
 if sys.version_info >= (3, 13):
     raise RuntimeError(
@@ -13,26 +11,39 @@ if sys.version_info >= (3, 13):
 
 import discord
 from aiohttp import web
-from discord import app_commands
 from discord.ext import commands
+
+from .config import AppConfig
+from .database import Database
+from .registry import build_feature_specs
+from .settings_data import build_settings_snapshot
+from .state import AppState
 
 LOGGER = logging.getLogger(__name__)
 
-DISCORD_TOKEN_ENV = "DISCORD_TOKEN"
-DISCORD_GUILD_ID_ENV = "DISCORD_GUILD_ID"
-PORT_ENV = "PORT"
-DEFAULT_PORT = 3000
-
 
 class PakFwaBot(commands.Bot):
-    """Discord.py bot with slash commands and a small HTTP health server."""
+    """Discord bot with gated features, shared settings, and HTTP health routes."""
 
-    def __init__(self) -> None:
+    state: AppState
+
+    def __init__(self, state: AppState) -> None:
         intents = discord.Intents.default()
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
+        self.state = state
 
     async def setup_hook(self) -> None:
-        self.tree.add_command(build_help_command())
+        for spec in self.state.feature_specs:
+            if spec.is_enabled(self.state.config.runtime_mode):
+                self.tree.add_command(spec.command)
+                LOGGER.info("Enabled feature %s.", spec.name)
+            else:
+                LOGGER.info(
+                    "Skipped feature %s in %s mode.",
+                    spec.name,
+                    self.state.config.runtime_mode.value,
+                )
+
         await sync_commands(self)
 
     async def on_ready(self) -> None:
@@ -43,38 +54,11 @@ class PakFwaBot(commands.Bot):
         LOGGER.info("Logged in as %s (%s).", self.user, self.user.id)
 
 
-def build_help_command() -> app_commands.Command[Any, ..., None]:
-    async def help_callback(interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
-            title="PAK FWA Bot Help",
-            description="Thanks for trying the bot! More commands will be added here soon.",
-            color=discord.Color.blue(),
-        )
-        embed.add_field(
-            name="/help",
-            value="Shows this placeholder help message.",
-            inline=False,
-        )
-        embed.set_footer(text="PAK FWA Bot")
+async def sync_commands(bot: PakFwaBot) -> None:
+    guild_id = bot.state.config.discord_guild_id
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    return app_commands.Command(
-        name="help",
-        description="Show help information for this bot.",
-        callback=help_callback,
-    )
-
-
-async def sync_commands(bot: commands.Bot) -> None:
-    guild_id = os.getenv(DISCORD_GUILD_ID_ENV)
-
-    if guild_id:
-        try:
-            guild = discord.Object(id=int(guild_id))
-        except ValueError as exc:
-            raise RuntimeError(f"{DISCORD_GUILD_ID_ENV} must be a numeric Discord server ID") from exc
-
+    if guild_id is not None:
+        guild = discord.Object(id=guild_id)
         bot.tree.copy_global_to(guild=guild)
         synced = await bot.tree.sync(guild=guild)
         LOGGER.info("Synced %s guild slash command(s) to guild %s.", len(synced), guild_id)
@@ -84,27 +68,39 @@ async def sync_commands(bot: commands.Bot) -> None:
     LOGGER.info("Synced %s global slash command(s).", len(synced))
 
 
-def create_web_app(bot: commands.Bot) -> web.Application:
+def create_web_app(bot: PakFwaBot) -> web.Application:
     app = web.Application()
 
     async def index(_request: web.Request) -> web.Response:
         return web.Response(text="PAK FWA Bot is awake.")
 
     async def health(_request: web.Request) -> web.Response:
+        database_health = await bot.state.database.health()
         return web.json_response(
             {
                 "status": "ok",
+                "runtime_mode": bot.state.config.runtime_mode.value,
                 "discord_ready": bot.is_ready(),
                 "latency_ms": None if bot.latency is None else round(bot.latency * 1000),
+                "database": database_health,
             }
         )
 
+    async def settings(_request: web.Request) -> web.Response:
+        snapshot = build_settings_snapshot(
+            bot.state,
+            discord_ready=bot.is_ready(),
+            latency_ms=None if bot.latency is None else round(bot.latency * 1000),
+        )
+        return web.json_response(snapshot)
+
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
+    app.router.add_get("/settings", settings)
     return app
 
 
-async def start_web_server(bot: commands.Bot, port: int) -> web.AppRunner:
+async def start_web_server(bot: PakFwaBot, port: int) -> web.AppRunner:
     runner = web.AppRunner(create_web_app(bot))
     await runner.setup()
 
@@ -114,33 +110,27 @@ async def start_web_server(bot: commands.Bot, port: int) -> web.AppRunner:
     return runner
 
 
-def get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
-
-
-def get_port() -> int:
-    raw_port = os.getenv(PORT_ENV, str(DEFAULT_PORT))
-    try:
-        return int(raw_port)
-    except ValueError as exc:
-        raise RuntimeError(f"{PORT_ENV} must be a valid integer") from exc
-
-
 async def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    token = get_required_env(DISCORD_TOKEN_ENV)
-    port = get_port()
-    bot = PakFwaBot()
+    config = AppConfig.from_environment()
+    database = Database(config.database_url)
+    await database.connect()
 
-    runner = await start_web_server(bot, port)
+    state = AppState(
+        config=config,
+        database=database,
+        feature_specs=build_feature_specs(),
+    )
+
+    bot = PakFwaBot(state)
+
+    runner = await start_web_server(bot, config.port)
     try:
-        await bot.start(token)
+        await bot.start(config.discord_token)
     finally:
         await runner.cleanup()
+        await database.close()
         await bot.close()
 
 
