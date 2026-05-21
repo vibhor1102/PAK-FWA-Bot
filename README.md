@@ -8,6 +8,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `bot/state.py` keeps shared app state in one place.
 - `bot/features.py` and `bot/registry.py` gate commands by deployment target.
 - `bot/database.py` wraps PostgreSQL access.
+- `bot/coc_service.py` manages Clash of Clans API access for clan reporting.
 - `bot/commands/` holds slash-command modules.
 - `bot/settings_data.py` powers both the `/settings` command and the `/settings` HTTP route.
 - `bot/main.py` wires everything together.
@@ -19,6 +20,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `discord.py` bot runtime.
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
+- A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting.
 - An `aiohttp` web server with:
   - `GET /` for a simple awake message.
   - `GET /health` for Render/UptimeRobot health checks.
@@ -36,6 +38,13 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `DISCORD_GUILD_ID` | No | Discord client with Developer Mode enabled > right-click your server > Copy Server ID | Recommended while developing because guild commands update quickly. Remove later for global commands. |
 | `DATABASE_URL` | No now, yes later | Supabase or local PostgreSQL | The app is ready for Postgres-backed features even before they are all added. |
 | `PORT` | No | Render sets this automatically | Only set manually for local development if needed. |
+| `COC_EMAIL` | Optional | Supercell developer portal email | Used by `coc.py` to create and refresh API keys automatically. |
+| `COC_PASSWORD` | Optional | Supercell developer portal password | Used with `COC_EMAIL` for automatic key management. |
+| `COC_TOKENS` | Optional | Existing Clash of Clans API tokens | Comma-separated fallback if you already created tokens manually. |
+| `COC_KEY_COUNT` | Optional | Your preference | How many API keys `coc.py` may manage, up to the library limit. |
+| `COC_KEY_NAME` / `COC_KEY_NAMES` | Optional | Your preference | Label used for keys that `coc.py` creates. The code accepts both names. |
+| `COC_KEY_SCOPES` | Optional | Your preference | Stored and shown in settings for visibility; the current `coc.py` client uses its own built-in key handling. |
+| `COC_THROTTLE_LIMIT` | Optional | Your preference | Passed through to `coc.py` to control request throttling. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
 
@@ -59,7 +68,8 @@ After deploy, your service URL should return a simple response at `/`, JSON at `
 4. Add `DISCORD_TOKEN` with your bot token as the value.
 5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
 6. Add `DATABASE_URL` with your Supabase production pooler connection string.
-7. Save changes and redeploy/restart the service.
+7. If you want `/clanreport`, add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys.
+8. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
 
@@ -82,6 +92,7 @@ You said you can manage these, but make sure the following are done:
 4. Enable only the privileged intents you actually need. This scaffold currently uses only default, non-privileged intents.
 5. If using `DISCORD_GUILD_ID`, copy the server ID from the same server where you invited the bot.
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
+7. If `/clanreport` says Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
 
 ## Local development
 
@@ -139,5 +150,6 @@ When `DISCORD_GUILD_ID` is set, the bot registers commands only to that server a
 
 - A missing `DISCORD_TOKEN` will stop the app on startup; add it in Render Environment settings.
 - An invalid `DISCORD_GUILD_ID` must be corrected or removed; it should contain only the numeric Discord server ID.
+- If `/clanreport` fails with a configuration error, confirm the COC environment variables are set in the same environment that starts the bot.
 - If Render says the port is unavailable, make sure the start command is `python -m bot`; the app reads Render's `PORT` environment variable automatically.
 - If UptimeRobot reports failures, check both `/` and `/health` on the Render service URL and inspect Render logs.

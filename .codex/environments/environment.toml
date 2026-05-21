@@ -3,7 +3,7 @@ version = 1
 name = "PAK-Originals"
 
 [setup]
-script = ""
+script = "pip install -r requirements.txt"
 
 [[actions]]
 name = "Run"

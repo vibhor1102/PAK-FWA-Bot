@@ -18,6 +18,11 @@ def build_help_command() -> app_commands.Command[Any, ..., None]:
             value="Shows live runtime, database, and feature-state details.",
             inline=False,
         )
+        embed.add_field(
+            name="/clanreport",
+            value="Pulls a detailed Clash of Clans clan, war, and member report.",
+            inline=False,
+        )
         embed.set_footer(text="PAK FWA Bot")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)

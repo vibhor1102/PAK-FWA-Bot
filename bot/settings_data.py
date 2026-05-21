@@ -53,6 +53,17 @@ def build_settings_snapshot(state: AppState, *, discord_ready: bool, latency_ms:
             ],
         },
         {
+            "title": "Clash of Clans",
+            "items": [
+                ("Configured", yes_no(state.coc_service.configured)),
+                ("Auth mode", state.coc_service.auth_mode),
+                ("Key count", str(config.coc_key_count)),
+                ("Key names", config.coc_key_names),
+                ("Key scopes", ", ".join(config.coc_key_scopes) if config.coc_key_scopes else "unset"),
+                ("Throttle limit", str(config.coc_throttle_limit)),
+            ],
+        },
+        {
             "title": "Features",
             "items": [
                 ("Enabled now", ", ".join(enabled_features) if enabled_features else "none"),

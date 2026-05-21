@@ -26,6 +26,13 @@ class AppConfig:
     discord_guild_id: int | None
     port: int
     database_url: str | None
+    coc_email: str | None
+    coc_password: str | None
+    coc_tokens: tuple[str, ...]
+    coc_key_count: int
+    coc_key_names: str
+    coc_key_scopes: tuple[str, ...]
+    coc_throttle_limit: int
 
     @classmethod
     def from_environment(cls) -> "AppConfig":
@@ -37,6 +44,17 @@ class AppConfig:
         discord_guild_id = _read_optional_int("DISCORD_GUILD_ID")
         port = _read_int("PORT", DEFAULT_PORT)
         database_url = os.getenv("DATABASE_URL") or None
+        coc_email = os.getenv("COC_EMAIL") or None
+        coc_password = os.getenv("COC_PASSWORD") or None
+        coc_tokens = _read_csv("COC_TOKENS")
+        coc_key_count = _read_positive_int("COC_KEY_COUNT", 1)
+        coc_key_names = _read_first_env(
+            "COC_KEY_NAME",
+            "COC_KEY_NAMES",
+            default="PAK FWA Bot",
+        )
+        coc_key_scopes = _read_csv("COC_KEY_SCOPES")
+        coc_throttle_limit = _read_positive_int("COC_THROTTLE_LIMIT", 30)
 
         return cls(
             runtime_mode=runtime_mode,
@@ -46,6 +64,13 @@ class AppConfig:
             discord_guild_id=discord_guild_id,
             port=port,
             database_url=database_url,
+            coc_email=coc_email,
+            coc_password=coc_password,
+            coc_tokens=coc_tokens,
+            coc_key_count=coc_key_count,
+            coc_key_names=coc_key_names,
+            coc_key_scopes=coc_key_scopes,
+            coc_throttle_limit=coc_throttle_limit,
         )
 
 
@@ -102,6 +127,33 @@ def _read_optional_int(name: str) -> int | None:
         return int(raw_value)
     except ValueError as exc:
         raise RuntimeError(f"{name} must be a valid integer") from exc
+
+
+def _read_positive_int(name: str, default: int) -> int:
+    value = _read_int(name, default)
+    if value < 1:
+        raise RuntimeError(f"{name} must be greater than zero")
+    return value
+
+
+def _read_csv(name: str) -> tuple[str, ...]:
+    raw_value = os.getenv(name)
+    if not raw_value:
+        return ()
+
+    return tuple(
+        item.strip()
+        for item in raw_value.split(",")
+        if item.strip()
+    )
+
+
+def _read_first_env(*names: str, default: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
 
 
 def _require_env(name: str) -> str:

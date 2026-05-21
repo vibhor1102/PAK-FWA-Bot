@@ -13,6 +13,7 @@ from aiohttp import web
 from discord.ext import commands
 
 from .config import AppConfig
+from .coc_service import CocService
 from .database import Database
 from .registry import build_feature_specs
 from .settings_data import build_settings_snapshot
@@ -115,10 +116,12 @@ async def run() -> None:
     config = AppConfig.from_environment()
     database = Database(config.database_url)
     await database.connect()
+    coc_service = CocService(config)
 
     state = AppState(
         config=config,
         database=database,
+        coc_service=coc_service,
         feature_specs=build_feature_specs(),
     )
 
@@ -129,6 +132,7 @@ async def run() -> None:
         await bot.start(config.discord_token)
     finally:
         await runner.cleanup()
+        await coc_service.close()
         await database.close()
         await bot.close()
 
