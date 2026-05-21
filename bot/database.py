@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import asyncpg
 
@@ -22,6 +23,7 @@ class Database:
         if not self.dsn:
             return
 
+        _validate_dsn(self.dsn)
         self.pool = await asyncpg.create_pool(self.dsn)
 
     async def close(self) -> None:
@@ -46,3 +48,12 @@ class Database:
             "connected": True,
             "version": version,
         }
+
+
+def _validate_dsn(dsn: str) -> None:
+    parsed = urlsplit(dsn)
+    if parsed.netloc.count("@") > 1:
+        raise RuntimeError(
+            "DATABASE_URL contains an unencoded @ in the username or password. "
+            "Percent-encode it as %40 before deploying."
+        )
