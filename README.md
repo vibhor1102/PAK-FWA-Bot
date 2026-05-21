@@ -92,6 +92,8 @@ You said you can manage these, but make sure the following are done:
    source .venv/bin/activate
    ```
 
+   Use Python 3.14.0 so your local environment matches `.python-version` and Render.
+
 2. Install dependencies:
 
    ```bash

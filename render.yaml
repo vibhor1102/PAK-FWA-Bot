@@ -10,7 +10,7 @@ services:
       - key: BOT_RUNTIME
         value: production
       - key: PYTHON_VERSION
-        value: 3.12.13
+        value: 3.14.0
       - key: DISCORD_TOKEN
         sync: false
       - key: DISCORD_GUILD_ID
