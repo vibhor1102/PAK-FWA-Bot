@@ -11,7 +11,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `bot/commands/` holds slash-command modules.
 - `bot/settings_data.py` powers both the `/settings` command and the `/settings` HTTP route.
 - `bot/main.py` wires everything together.
-- `render.yaml` defines the Render web service and Postgres database.
+- `render.yaml` defines the Render web service and environment variables.
 - `.env.example` documents local and deployment variables without secrets.
 
 ## What is included
@@ -34,7 +34,7 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `BOT_RUNTIME` | No | Local choice or Render env var | Use `local`, `testing`, or `production` to control feature gates. |
 | `DISCORD_TOKEN` | Yes | Discord Developer Portal > your application > Bot > Token | Keep this secret. Never commit it to GitHub. |
 | `DISCORD_GUILD_ID` | No | Discord client with Developer Mode enabled > right-click your server > Copy Server ID | Recommended while developing because guild commands update quickly. Remove later for global commands. |
-| `DATABASE_URL` | No now, yes later | Render Postgres or local PostgreSQL | The app is ready for Postgres-backed features even before they are all added. |
+| `DATABASE_URL` | No now, yes later | Supabase or local PostgreSQL | The app is ready for Postgres-backed features even before they are all added. |
 | `PORT` | No | Render sets this automatically | Only set manually for local development if needed. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
@@ -58,7 +58,7 @@ After deploy, your service URL should return a simple response at `/`, JSON at `
 3. Add `BOT_RUNTIME=production`.
 4. Add `DISCORD_TOKEN` with your bot token as the value.
 5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
-6. Attach or create a Render Postgres database and let `DATABASE_URL` point at its connection string.
+6. Add `DATABASE_URL` with your Supabase production pooler connection string.
 7. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
