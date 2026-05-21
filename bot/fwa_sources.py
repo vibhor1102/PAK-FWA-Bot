@@ -1022,6 +1022,18 @@ def render_cc_section(record: CcClanStatus, *, heading: str) -> list[str]:
     return lines
 
 
+def render_fwa_guide_section() -> list[str]:
+    return [
+        "FWA matchmaking notes",
+        "Points decide the match: the clan with more points wins.",
+        "Public guide scoring rules: win = -1, loss = +1, mismatch = 0, blacklist/no-reward wars = 0.",
+        "Zero-win clans start at -100, so the point system is designed to keep matches balanced over time.",
+        "Official FWA clans, blacklisted clans, former FWA clans, and mismatches are all treated as distinct states.",
+        "Weights, clan composition, and sync timing are part of the matchmaking process, even though the exact hidden weight model is not exposed.",
+        "The report treats the public guide as matchmaking context, not as a secret API contract.",
+    ]
+
+
 def format_yes_no(value: bool | None) -> str:
     if value is None:
         return "unknown"

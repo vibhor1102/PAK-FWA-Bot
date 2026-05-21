@@ -20,7 +20,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `discord.py` bot runtime.
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
-- A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag.
+- A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag and war focus selector.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
 - An `aiohttp` web server with:
   - `GET /` for a simple awake message.
@@ -69,7 +69,7 @@ After deploy, your service URL should return a simple response at `/`, JSON at `
 4. Add `DISCORD_TOKEN` with your bot token as the value.
 5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
 6. Add `DATABASE_URL` with your Supabase production pooler connection string.
-7. If you want `/clanreport`, add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys. The FWA Stats JSON exports used by the report are public and do not need extra credentials.
+7. If you want `/clanreport`, add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys. The FWA Stats JSON exports used by the report are public and do not need extra credentials. The command now accepts a `war` focus of `ongoing` or `recent`.
 8. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
