@@ -71,31 +71,31 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
         if bot is None or not hasattr(bot, "state"):
             await interaction.response.send_message(
                 "Clash of Clans reporting is unavailable right now.",
-                ephemeral=True,
+                ephemeral=False,
             )
             return
 
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        await interaction.response.defer(thinking=True, ephemeral=False)
 
         try:
             report = await build_clan_report(bot.state, clan_tag, comparison_tag, war_focus=war or "ongoing")
         except ValueError as exc:
-            await interaction.followup.send(str(exc), ephemeral=True)
+            await interaction.followup.send(str(exc), ephemeral=False)
             return
         except CocConfigurationError as exc:
-            await interaction.followup.send(str(exc), ephemeral=True)
+            await interaction.followup.send(str(exc), ephemeral=False)
             return
         except coc.NotFound:
             await interaction.followup.send(
                 f"No Clash of Clans clan was found for `{_normalize_clan_tag(clan_tag)}`.",
-                ephemeral=True,
+                ephemeral=False,
             )
             return
         except Exception as exc:
             LOGGER.exception("Clan report generation failed for %s", clan_tag)
             await interaction.followup.send(
                 f"Clan report generation failed: `{type(exc).__name__}: {exc}`.",
-                ephemeral=True,
+                ephemeral=False,
             )
             return
 
@@ -106,7 +106,7 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
         )
 
         summary_embed = build_summary_embed(report)
-        await interaction.followup.send(embed=summary_embed, file=attachment, ephemeral=True)
+        await interaction.followup.send(embed=summary_embed, file=attachment, ephemeral=False)
 
     return app_commands.Command(
         name="clanreport",
