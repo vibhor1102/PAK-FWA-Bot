@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from typing import Any
 
 if sys.version_info < (3, 14):
     raise RuntimeError(
@@ -32,6 +33,8 @@ class PakFwaBot(commands.Bot):
         intents = discord.Intents.default()
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.state = state
+        self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._startup_tasks_scheduled = False
 
     async def setup_hook(self) -> None:
         for spec in self.state.feature_specs:
@@ -45,14 +48,37 @@ class PakFwaBot(commands.Bot):
                     self.state.config.runtime_mode.value,
                 )
 
-        await sync_commands(self)
-
     async def on_ready(self) -> None:
         if self.user is None:
             LOGGER.info("Discord client is ready.")
             return
 
         LOGGER.info("Logged in as %s (%s).", self.user, self.user.id)
+        if not self._startup_tasks_scheduled:
+            self._startup_tasks_scheduled = True
+            self._schedule_background_task(sync_commands(self), "slash command sync")
+            if self.state.coc_service.configured:
+                self._schedule_background_task(
+                    self.state.coc_service.get_client(),
+                    "Clash of Clans client warmup",
+                )
+
+    def _schedule_background_task(self, awaitable: Any, label: str) -> None:
+        task = asyncio.create_task(awaitable)
+        self._background_tasks.add(task)
+
+        def _done(finished: asyncio.Task[Any]) -> None:
+            self._background_tasks.discard(finished)
+            try:
+                finished.result()
+            except asyncio.CancelledError:
+                LOGGER.info("%s was cancelled.", label)
+            except Exception:
+                LOGGER.exception("%s failed.", label)
+            else:
+                LOGGER.info("%s completed.", label)
+
+        task.add_done_callback(_done)
 
 
 async def sync_commands(bot: PakFwaBot) -> None:
@@ -133,12 +159,17 @@ async def run() -> None:
     )
 
     bot = PakFwaBot(state)
+    if coc_service.configured:
+        bot._schedule_background_task(coc_service.get_client(), "Clash of Clans client warmup")
 
     runner = await start_web_server(bot, config.port)
     try:
         await bot.start(config.discord_token)
     finally:
         LOGGER.info("Shutting down PAK FWA Bot...")
+        for task in list(bot._background_tasks):
+            task.cancel()
+        await asyncio.gather(*bot._background_tasks, return_exceptions=True)
         await runner.cleanup()
         await coc_service.close()
         await fwa_service.close()

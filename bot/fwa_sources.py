@@ -855,6 +855,12 @@ def format_optional_float(value: float | None) -> str:
     return f"{value:.1f}"
 
 
+def format_optional_int(value: int | None) -> str:
+    if value is None or value < 0:
+        return "n/a"
+    return str(value)
+
+
 def _parse_fwa_stats_member(item: dict[str, Any]) -> FwaStatsMemberRecord:
     return FwaStatsMemberRecord(
         tag=str(item.get("tag") or ""),

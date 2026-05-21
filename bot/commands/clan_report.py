@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import asyncio
+import logging
 from io import BytesIO
 import re
 from typing import Any
@@ -20,6 +21,9 @@ from ..fwa_sources import (
     render_cc_section,
     render_points_section,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -72,8 +76,9 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
             )
             return
         except Exception as exc:
+            LOGGER.exception("Clan report generation failed for %s", clan_tag)
             await interaction.followup.send(
-                f"Clan report generation failed: `{type(exc).__name__}`.",
+                f"Clan report generation failed: `{type(exc).__name__}: {exc}`.",
                 ephemeral=True,
             )
             return
