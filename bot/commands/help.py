@@ -132,6 +132,7 @@ class HelpDashboardView(discord.ui.View):
                 value=(
                     f"{command_mention(self._bot, '/clan')} - Clan summary from tag, alias, or default.\n"
                     f"{command_mention(self._bot, '/player')} - Player summary from tag or linked user.\n"
+                    f"{command_mention(self._bot, '/fwa')} - Active-war FWA instructions and safety checks.\n"
                     f"{command_mention(self._bot, '/profile')} - Linked Clash identity for a Discord user."
                 ),
                 inline=False,
@@ -158,6 +159,15 @@ class HelpDashboardView(discord.ui.View):
                 inline=False,
             )
         elif self._page_index == 3:
+            embed.add_field(
+                name="/fwa",
+                value=(
+                    f"{command_mention(self._bot, '/fwa')} - Checks the official active war, waits through the "
+                    "3-hour FWA Stats safety margin, posts public diagnostics when data should exist, and gives "
+                    "the caller a private copy-ready instruction block when data is good."
+                ),
+                inline=False,
+            )
             embed.add_field(
                 name="/clanreport",
                 value=(

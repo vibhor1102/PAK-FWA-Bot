@@ -21,7 +21,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `discord.py` bot runtime.
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
-- `/setup`, `/link`, `/profile`, `/player`, and `/clan` commands for Discord-first clan/player linking and lookup.
+- `/setup`, `/link`, `/profile`, `/player`, `/clan`, and `/fwa` commands for Discord-first clan/player linking, lookup, and active-war FWA instructions.
 - A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag and war focus selector.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
 - An `aiohttp` web server with:
@@ -100,7 +100,7 @@ You said you can manage these, but make sure the following are done:
 5. If using `DISCORD_GUILD_ID`, copy the server ID from the same server where you invited the bot.
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
 7. If `/clanreport` says Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
-8. Use `/setup clan` to set a server or channel default clan, then `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, and `/clanreport` can then reuse those defaults.
+8. Use `/setup clan` to set a server or channel default clan, then `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, `/fwa`, and `/clanreport` can then reuse those defaults.
 
 ## Local development
 

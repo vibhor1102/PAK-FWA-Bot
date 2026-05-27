@@ -3,6 +3,7 @@ from __future__ import annotations
 from .commands import (
     build_clan_command,
     build_clan_report_command,
+    build_fwa_command,
     build_help_command,
     build_link_group,
     build_player_command,
@@ -54,5 +55,10 @@ def build_feature_specs() -> tuple[FeatureSpec, ...]:
             name="clanreport",
             visibility=FeatureVisibility.all,
             command=build_clan_report_command(),
+        ),
+        FeatureSpec(
+            name="fwa",
+            visibility=FeatureVisibility.all,
+            command=build_fwa_command(),
         ),
     )

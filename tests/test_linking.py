@@ -144,5 +144,99 @@ class CommandMentionTests(unittest.TestCase):
         self.assertEqual(command_mention(SimpleNamespace(), "/setup clan"), "/setup clan")
 
 
+class FwaCommandTests(unittest.TestCase):
+    def test_copy_block_uses_actual_emoji(self) -> None:
+        from bot.commands.fwa import FwaEvent, _copy_block
+
+        event = FwaEvent(kind="blacklist", opponent_name="OZ Taskforce", war_record=SimpleNamespace())
+        text = _copy_block(event)
+
+        self.assertIn("🟥Blacklist War against OZ Taskforce 🟥", text)
+        self.assertIn("📌ACTIVATE WAR BASES", text)
+        self.assertNotIn(":red_square:", text)
+
+    def test_event_mapping_detects_mismatch(self) -> None:
+        from bot.commands.fwa import _event_from_record
+
+        record = SimpleNamespace(result="inWar", opponent_info="Mismatch", opponent_name="Juicer Esports", matched=False)
+        war = SimpleNamespace(opponent=SimpleNamespace(name="Juicer Esports"))
+
+        event = _event_from_record(record, war)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.kind, "mismatch")
+        self.assertEqual(event.classification, "mismatch")
+
+    def test_event_mapping_treats_unknown_unmatched_as_mismatch(self) -> None:
+        from bot.commands.fwa import _event_from_record
+
+        record = SimpleNamespace(result="preparation", opponent_info="Unknown", opponent_name="StrawHats", matched=False)
+        war = SimpleNamespace(opponent=SimpleNamespace(name="StrawHats"))
+
+        event = _event_from_record(record, war)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.kind, "mismatch")
+
+    def test_event_mapping_detects_blacklist(self) -> None:
+        from bot.commands.fwa import _event_from_record
+
+        record = SimpleNamespace(result="preparation", opponent_info="Blacklisted", opponent_name="OZ Taskforce", matched=False)
+        war = SimpleNamespace(opponent=SimpleNamespace(name="OZ Taskforce"))
+
+        event = _event_from_record(record, war)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.kind, "blacklist")
+
+    def test_preparation_fwa_event_uses_points_farm_to_choose_win(self) -> None:
+        from bot.commands.fwa import _event_from_record
+
+        record = SimpleNamespace(
+            result="preparation",
+            opponent_info="FWA",
+            opponent_name="Vixen Raiders",
+            matched=True,
+        )
+        war = SimpleNamespace(opponent=SimpleNamespace(name="Vixen Raiders"))
+        primary_points = SimpleNamespace(point_balance=9)
+        opponent_points = SimpleNamespace(point_balance=8)
+
+        event = _event_from_record(record, war, primary_points, opponent_points)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.kind, "win")
+        self.assertEqual(event.primary_points, 9)
+        self.assertEqual(event.opponent_points, 8)
+
+    def test_preparation_fwa_event_uses_points_farm_to_choose_loss(self) -> None:
+        from bot.commands.fwa import _event_from_record
+
+        record = SimpleNamespace(
+            result="preparation",
+            opponent_info="FWA",
+            opponent_name="Adult Clan",
+            matched=True,
+        )
+        war = SimpleNamespace(opponent=SimpleNamespace(name="Adult Clan"))
+        primary_points = SimpleNamespace(point_balance=2)
+        opponent_points = SimpleNamespace(point_balance=5)
+
+        event = _event_from_record(record, war, primary_points, opponent_points)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.kind, "lose")
+
+    def test_fallback_main_message_removes_code_fence(self) -> None:
+        from bot.commands.fwa import FwaEvent, _fallback_main_message
+
+        event = FwaEvent(kind="win", opponent_name="NO WAR", war_record=SimpleNamespace())
+        text = _fallback_main_message(event)
+
+        self.assertTrue(text.startswith("🟩WIN WAR vs NO WAR 🟩"))
+        self.assertNotIn("```", text)
+        self.assertNotIn("FWA points", text)
+
+
 if __name__ == "__main__":
     unittest.main()

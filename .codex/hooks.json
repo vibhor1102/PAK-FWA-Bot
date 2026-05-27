@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Vibhor\\Desktop\\PAK-Originals\\.codex\\hooks\\restart-testing-bot.ps1\"",
+            "timeout": 15,
+            "statusMessage": "Restarting PAK Originals testing bot"
+          }
+        ]
+      }
+    ]
+  }
+}
