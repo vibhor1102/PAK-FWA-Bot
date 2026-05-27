@@ -25,9 +25,10 @@ def build_help_embed(bot: Any) -> discord.Embed:
     embed.add_field(
         name="Start",
         value=(
+            f"{command_mention(bot, '/settings')} - Open your setup hub.\n"
             f"{command_mention(bot, '/setup clan')} - Link a clan to this server or channel.\n"
-            f"{command_mention(bot, '/link create')} - Link player/clan tags to a Discord user.\n"
-            f"{command_mention(bot, '/settings')} - Check runtime, database, and feature status."
+            f"{command_mention(bot, '/setup player')} - Link a player account.\n"
+            f"{command_mention(bot, '/setup user-clan')} - Link your clan."
         ),
         inline=False,
     )
@@ -35,6 +36,8 @@ def build_help_embed(bot: Any) -> discord.Embed:
         name="Identity",
         value=(
             f"{command_mention(bot, '/profile')} - Show a user's linked Clash identity.\n"
+            f"{command_mention(bot, '/setup player')} - Add or update a linked player.\n"
+            f"{command_mention(bot, '/setup user-clan')} - Add or update a linked clan.\n"
             f"{command_mention(bot, '/link verify')} - Verify player ownership with an API token.\n"
             f"{command_mention(bot, '/link list')} / {command_mention(bot, '/link delete')} - Review or remove links."
         ),

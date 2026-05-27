@@ -12,8 +12,92 @@ def _require_guild(interaction: discord.Interaction) -> bool:
     return interaction.guild_id is not None
 
 
+def _user_names(user: discord.abc.User) -> tuple[str, str]:
+    return user.name, user.display_name
+
+
 def build_setup_group() -> app_commands.Group:
     group = app_commands.Group(name="setup", description="Configure server-level Clash links.")
+
+    @group.command(name="player", description="Link a Clash player to yourself or another Discord user.")
+    @app_commands.describe(player_tag="Player tag to link.")
+    @app_commands.describe(user="User to link on behalf of; managers only for other users.")
+    @app_commands.describe(is_default="Set this player as the user's default account.")
+    async def setup_player(
+        interaction: discord.Interaction,
+        player_tag: str,
+        user: discord.Member | None = None,
+        is_default: bool = False,
+    ) -> None:
+        target = user or interaction.user
+        if user is not None and user.id != interaction.user.id:
+            permissions = interaction.permissions
+            if permissions is None or not permissions.manage_guild:
+                await interaction.response.send_message("Only server managers can link accounts for another user.", ephemeral=True)
+                return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        username, display_name = _user_names(target)
+        try:
+            client = await interaction.client.state.coc_service.get_client()  # type: ignore[attr-defined]
+            player = await client.get_player(normalize_tag(player_tag))
+            linked = await interaction.client.state.database.link_player(  # type: ignore[attr-defined]
+                user_id=target.id,
+                username=username,
+                display_name=display_name,
+                player_tag=player.tag,
+                player_name=player.name,
+                linked_by=interaction.user.id,
+                is_default=is_default,
+            )
+        except (ValueError, CocConfigurationError, RuntimeError) as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        except coc.NotFound:
+            await interaction.followup.send(f"No Clash player was found for `{player_tag}`.", ephemeral=True)
+            return
+
+        default_note = " default" if linked["is_default"] else ""
+        await interaction.followup.send(
+            f"Linked{default_note} player **{player.name}** (`{player.tag}`) to {target.mention}.",
+            ephemeral=True,
+        )
+
+    @group.command(name="user-clan", description="Set your linked clan, or set one for another user.")
+    @app_commands.describe(clan_tag="Clan tag to link as the user's clan.")
+    @app_commands.describe(user="User to link on behalf of; managers only for other users.")
+    async def setup_user_clan(
+        interaction: discord.Interaction,
+        clan_tag: str,
+        user: discord.Member | None = None,
+    ) -> None:
+        target = user or interaction.user
+        if user is not None and user.id != interaction.user.id:
+            permissions = interaction.permissions
+            if permissions is None or not permissions.manage_guild:
+                await interaction.response.send_message("Only server managers can link accounts for another user.", ephemeral=True)
+                return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        username, display_name = _user_names(target)
+        try:
+            client = await interaction.client.state.coc_service.get_client()  # type: ignore[attr-defined]
+            clan = await client.get_clan(normalize_tag(clan_tag))
+            await interaction.client.state.database.upsert_user_clan(  # type: ignore[attr-defined]
+                user_id=target.id,
+                username=username,
+                display_name=display_name,
+                clan_tag=clan.tag,
+                clan_name=clan.name,
+            )
+        except (ValueError, CocConfigurationError, RuntimeError) as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        except coc.NotFound:
+            await interaction.followup.send(f"No Clash clan was found for `{clan_tag}`.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"Linked clan **{clan.name}** (`{clan.tag}`) to {target.mention}.", ephemeral=True)
 
     @group.command(name="clan", description="Link a Clash clan to this server or channel.")
     @app_commands.default_permissions(manage_guild=True)

@@ -11,7 +11,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `bot/coc_service.py` manages Clash of Clans API access for clan reporting.
 - `bot/commands/` holds slash-command modules.
 - `bot/resolver.py` resolves explicit, channel, server, and user-linked Clash tags for commands.
-- `bot/settings_data.py` powers both the `/settings` command and the `/settings` HTTP route.
+- `bot/settings_data.py` powers the safe `/settings` HTTP route and the slash settings hub's system page.
 - `bot/main.py` wires everything together.
 - `render.yaml` defines the Render web service and environment variables.
 - `.env.example` documents local and deployment variables without secrets.
@@ -20,7 +20,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 
 - `discord.py` bot runtime.
 - A `/help` slash command.
-- A `/settings` slash command and matching `/settings` HTTP route.
+- A `/settings` slash setup hub and matching safe `/settings` HTTP route.
 - `/setup`, `/link`, `/profile`, `/player`, `/clan`, `/fwa`, and `/autorole` commands for Discord-first clan/player linking, lookup, active-war FWA instructions, and linked-account role sync.
 - Proactive war monitoring for linked clans, with `/setup announcements` choosing where the bot posts war/FWA updates.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.

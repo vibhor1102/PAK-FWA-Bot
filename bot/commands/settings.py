@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import discord
@@ -9,181 +10,329 @@ from ..command_mentions import command_mention
 from ..settings_data import build_settings_snapshot
 
 
+@dataclass(slots=True)
+class SettingsHubData:
+    profile: dict[str, Any] | None
+    players: list[dict[str, Any]]
+    server_clans: list[dict[str, Any]]
+    announcements: dict[str, Any] | None
+    autoroles: list[dict[str, Any]]
+    runtime: dict[str, object]
+
+
 class SettingsPageButton(discord.ui.Button):
-    def __init__(self, view: "SettingsDashboardView", label: str, page_index: int, *, row: int) -> None:
-        super().__init__(
-            label=label,
-            style=discord.ButtonStyle.secondary,
-            row=row,
-        )
+    def __init__(self, view: "SettingsHubView", label: str, page: str, *, row: int) -> None:
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=row)
         self._view_ref = view
-        self._page_index = page_index
+        self._page = page
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await self._view_ref.switch_page(interaction, self._page_index)
+        await self._view_ref.switch_page(interaction, self._page)
 
 
 class SettingsRefreshButton(discord.ui.Button):
-    def __init__(self, view: "SettingsDashboardView", *, row: int) -> None:
-        super().__init__(
-            label="Refresh",
-            style=discord.ButtonStyle.success,
-            row=row,
-        )
+    def __init__(self, view: "SettingsHubView", *, row: int) -> None:
+        super().__init__(label="Refresh", style=discord.ButtonStyle.success, row=row)
         self._view_ref = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await self._view_ref.refresh(interaction)
 
 
-class SettingsDashboardView(discord.ui.View):
-    def __init__(self, bot: Any, *, page_index: int = 0) -> None:
-        super().__init__(timeout=600)
-        self._bot = bot
-        self._settings_snapshot = self._build_snapshot()
-        self._page_titles = ["Overview", "Commands"] + [
-            section["title"] for section in self._settings_snapshot["sections"]
+class ClanSelect(discord.ui.Select):
+    def __init__(self, view: "SettingsHubView") -> None:
+        options = [
+            discord.SelectOption(
+                label=str(clan.get("nickname") or clan["clan_name"])[:100],
+                value=str(index),
+                description=str(clan["clan_tag"])[:100],
+            )
+            for index, clan in enumerate(view.data.server_clans[:25])
         ]
-        self._page_index = max(0, min(page_index, len(self._page_titles) - 1))
-        self._build_buttons()
+        super().__init__(placeholder="Select linked clan", min_values=1, max_values=1, options=options, row=2)
+        self._view_ref = view
 
-    def _build_snapshot(self) -> dict[str, object]:
-        return build_settings_snapshot(
-            self._bot.state,
-            discord_ready=self._bot.is_ready(),
-            latency_ms=None if self._bot.latency is None else round(self._bot.latency * 1000),
-            linking_counts=getattr(self._bot, "_latest_linking_counts", None),
-        )
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self._view_ref.selected_clan_index = int(self.values[0])
+        await interaction.response.edit_message(embed=self._view_ref.build_embed(), view=self._view_ref)
 
-    def _build_buttons(self) -> None:
-        for index, title in enumerate(self._page_titles):
-            row = index // 5
-            button = SettingsPageButton(self, self._button_label(title), index, row=row)
-            if index == self._page_index:
+
+class AutoroleSelect(discord.ui.Select):
+    def __init__(self, view: "SettingsHubView") -> None:
+        options = [
+            discord.SelectOption(
+                label=str(config["clan_name"])[:100],
+                value=str(index),
+                description=str(config["clan_tag"])[:100],
+            )
+            for index, config in enumerate(view.data.autoroles[:25])
+        ]
+        super().__init__(placeholder="Select autorole clan", min_values=1, max_values=1, options=options, row=2)
+        self._view_ref = view
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self._view_ref.selected_autorole_index = int(self.values[0])
+        await interaction.response.edit_message(embed=self._view_ref.build_embed(), view=self._view_ref)
+
+
+class SettingsHubView(discord.ui.View):
+    def __init__(
+        self,
+        bot: Any,
+        owner: discord.abc.User,
+        data: SettingsHubData,
+        pages: list[tuple[str, str]],
+        *,
+        page: str = "user",
+        selected_clan_index: int = 0,
+        selected_autorole_index: int = 0,
+    ) -> None:
+        super().__init__(timeout=600)
+        self.bot = bot
+        self.owner = owner
+        self.data = data
+        self.pages = pages
+        self.page = page if any(key == page for key, _ in pages) else "user"
+        self.selected_clan_index = selected_clan_index
+        self.selected_autorole_index = selected_autorole_index
+        self._build_items()
+
+    def _build_items(self) -> None:
+        for index, (key, label) in enumerate(self.pages):
+            button = SettingsPageButton(self, label, key, row=0)
+            if key == self.page:
                 button.style = discord.ButtonStyle.primary
             self.add_item(button)
+        self.add_item(SettingsRefreshButton(self, row=1))
+        if self.page == "clans" and self.data.server_clans:
+            self.add_item(ClanSelect(self))
+        if self.page == "autoroles" and self.data.autoroles:
+            self.add_item(AutoroleSelect(self))
 
-        refresh_row = len(self._page_titles) // 5
-        self.add_item(SettingsRefreshButton(self, row=refresh_row))
-
-    async def switch_page(self, interaction: discord.Interaction, page_index: int) -> None:
-        new_view = SettingsDashboardView(self._bot, page_index=page_index)
+    async def switch_page(self, interaction: discord.Interaction, page: str) -> None:
+        if interaction.user.id != self.owner.id:
+            await interaction.response.send_message("Open your own settings panel to use these controls.", ephemeral=True)
+            return
+        data = await load_settings_data(self.bot, interaction)
+        pages = available_pages(interaction)
+        new_view = SettingsHubView(self.bot, interaction.user, data, pages, page=page)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
     async def refresh(self, interaction: discord.Interaction) -> None:
-        self._bot._latest_linking_counts = await self._bot.state.database.count_linking_rows()
-        new_view = SettingsDashboardView(self._bot, page_index=self._page_index)
+        if interaction.user.id != self.owner.id:
+            await interaction.response.send_message("Open your own settings panel to refresh it.", ephemeral=True)
+            return
+        data = await load_settings_data(self.bot, interaction)
+        pages = available_pages(interaction)
+        new_view = SettingsHubView(
+            self.bot,
+            interaction.user,
+            data,
+            pages,
+            page=self.page,
+            selected_clan_index=self.selected_clan_index,
+            selected_autorole_index=self.selected_autorole_index,
+        )
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
     def build_embed(self) -> discord.Embed:
-        runtime_mode = str(self._settings_snapshot["runtime_mode"])
-        section_titles = [section["title"] for section in self._settings_snapshot["sections"]]
-        current_title = self._page_titles[self._page_index]
-
         embed = discord.Embed(
-            title="PAK FWA Bot Settings",
-            description=(
-                "Interactive configuration dashboard. Use the buttons below to switch sections and refresh live state."
-            ),
+            title="Settings",
+            description="One place to manage personal links, server defaults, feeds, and autoroles.",
             color=discord.Color.teal(),
         )
-        embed.set_author(name=f"Page {self._page_index + 1}/{len(self._page_titles)}")
-        embed.set_footer(text=f"Runtime: {runtime_mode} • Sections: {len(section_titles)}")
-
-        if self._page_index == 0:
-            embed.add_field(
-                name="Overview",
-                value="\n".join(self._overview_lines()),
-                inline=False,
-            )
-            for section in self._settings_snapshot["sections"]:
-                embed.add_field(
-                    name=section["title"],
-                    value=self._section_summary(section),
-                    inline=False,
-                )
-        elif self._page_index == 1:
-            embed.description = "Clickable command shortcuts for the setup and linking flow."
-            embed.add_field(
-                name="Start here",
-                value=(
-                    f"{command_mention(self._bot, '/setup clan')} - Link a server or channel clan default.\n"
-                    f"{command_mention(self._bot, '/autorole set')} - Configure linked-player clan roles.\n"
-                    f"{command_mention(self._bot, '/link create')} - Link a player or clan to a Discord user.\n"
-                    f"{command_mention(self._bot, '/link verify')} - Verify player ownership with the in-game API token."
-                ),
-                inline=False,
-            )
-            embed.add_field(
-                name="Daily lookup",
-                value=(
-                    f"{command_mention(self._bot, '/profile')} - Show a linked Discord identity.\n"
-                    f"{command_mention(self._bot, '/player')} - Show a Clash player summary.\n"
-                    f"{command_mention(self._bot, '/clan')} - Show a Clash clan summary.\n"
-                    f"{command_mention(self._bot, '/fwa')} - Check active war FWA instructions."
-                ),
-                inline=False,
-            )
-            embed.add_field(
-                name="Maintenance",
-                value=(
-                    f"{command_mention(self._bot, '/setup list')} - Review server clan links.\n"
-                    f"{command_mention(self._bot, '/setup remove')} - Remove a server clan or channel default.\n"
-                    f"{command_mention(self._bot, '/autorole list')} - Review autorole configs.\n"
-                    f"{command_mention(self._bot, '/autorole sync')} - Run autorole sync now.\n"
-                    f"{command_mention(self._bot, '/link list')} - Review linked accounts.\n"
-                    f"{command_mention(self._bot, '/link delete')} - Remove a user player/clan link."
-                ),
-                inline=False,
-            )
+        if self.page == "user":
+            self._user_page(embed)
+        elif self.page == "clans":
+            self._clans_page(embed)
+        elif self.page == "feeds":
+            self._feeds_page(embed)
+        elif self.page == "autoroles":
+            self._autoroles_page(embed)
         else:
-            section = self._settings_snapshot["sections"][self._page_index - 2]
-            embed.description = f"Live details for the `{current_title}` section."
-            for label, value in section["items"]:
-                embed.add_field(name=label, value=value, inline=False)
-
+            self._system_page(embed)
         return embed
 
-    def _overview_lines(self) -> list[str]:
-        sections = self._settings_snapshot["sections"]
-        lines = [
-            f"Start setup with {command_mention(self._bot, '/setup clan')}, then link users with {command_mention(self._bot, '/link create')}.",
-            "Each section below opens its own live card, and Refresh pulls the latest runtime state again.",
-        ]
-        for section in sections:
-            lines.append(f"{section['title']}: {self._section_summary(section)}")
-        return lines
+    def _user_page(self, embed: discord.Embed) -> None:
+        default_player = next((player for player in self.data.players if player.get("is_default")), None)
+        if default_player is None and self.data.players:
+            default_player = self.data.players[0]
+        player_summary = (
+            f"Default **{default_player['player_name']}** (`{default_player['player_tag']}`), "
+            f"{len(self.data.players)} total"
+            if default_player
+            else "No linked players"
+        )
+        clan_summary = (
+            f"**{self.data.profile['clan_name']}** (`{self.data.profile['clan_tag']}`)"
+            if self.data.profile and self.data.profile.get("clan_tag")
+            else "No linked clan"
+        )
+        embed.add_field(name="Player accounts", value=player_summary, inline=False)
+        embed.add_field(name="User clan", value=clan_summary, inline=False)
+        embed.add_field(
+            name="Manage",
+            value=(
+                f"{command_mention(self.bot, '/setup player')} - setup player accounts\n"
+                f"{command_mention(self.bot, '/setup user-clan')} - setup your clan\n"
+                f"{command_mention(self.bot, '/link list')} - view all linked accounts"
+            ),
+            inline=False,
+        )
 
-    def _section_summary(self, section: dict[str, object]) -> str:
-        items = section["items"]
-        if not isinstance(items, list) or not items:
-            return "No values available."
-        preview: list[str] = []
-        for label, value in items[:2]:
-            preview.append(f"{label}: {value}")
-        return " | ".join(preview)
+    def _clans_page(self, embed: discord.Embed) -> None:
+        embed.description = "Manage server-linked clans used for defaults, autocomplete, and FWA resolution."
+        if not self.data.server_clans:
+            embed.add_field(name="Linked clans", value="No clans linked yet.", inline=False)
+        else:
+            index = min(self.selected_clan_index, len(self.data.server_clans) - 1)
+            clan = self.data.server_clans[index]
+            channel = f"<#{clan['channel_id']}>" if clan.get("channel_id") else "server default"
+            embed.add_field(
+                name=f"{clan['clan_name']} ({clan['clan_tag']})",
+                value=(
+                    f"Default: {channel}\n"
+                    f"Alias: `{clan['alias']}`" if clan.get("alias") else f"Default: {channel}\nAlias: not set"
+                ),
+                inline=False,
+            )
+            embed.set_footer(text=f"{len(self.data.server_clans)} linked clan(s). Use the dropdown to inspect another.")
+        embed.add_field(
+            name="Manage",
+            value=(
+                f"{command_mention(self.bot, '/setup clan')} - link or update a server clan\n"
+                f"{command_mention(self.bot, '/setup list')} - detailed linked clan list\n"
+                f"{command_mention(self.bot, '/setup remove')} - remove a clan or channel mapping"
+            ),
+            inline=False,
+        )
 
-    @staticmethod
-    def _button_label(title: str) -> str:
-        return title if len(title) <= 18 else f"{title[:15]}..."
+    def _feeds_page(self, embed: discord.Embed) -> None:
+        if self.data.announcements:
+            enabled = [
+                label
+                for label, flag in (
+                    ("war found", self.data.announcements["war_found"]),
+                    ("FWA ready", self.data.announcements["fwa_ready"]),
+                    ("war ended", self.data.announcements["war_ended"]),
+                )
+                if flag
+            ]
+            summary = f"<#{self.data.announcements['channel_id']}> - {', '.join(enabled) or 'no events'}"
+        else:
+            summary = "No feed channel set"
+        embed.add_field(name="War feed", value=summary, inline=False)
+        embed.add_field(
+            name="Manage",
+            value=f"{command_mention(self.bot, '/setup announcements')} - setup proactive war feed channel",
+            inline=False,
+        )
+
+    def _autoroles_page(self, embed: discord.Embed) -> None:
+        if not self.data.autoroles:
+            embed.add_field(name="Autoroles", value="No autorole configs yet.", inline=False)
+        else:
+            index = min(self.selected_autorole_index, len(self.data.autoroles) - 1)
+            config = self.data.autoroles[index]
+            roles = [
+                f"General: {_mention(config.get('general_role_id'))}",
+                f"Leader: {_mention(config.get('leader_role_id'))}",
+                f"Co-leader: {_mention(config.get('co_leader_role_id'))}",
+                f"Elder: {_mention(config.get('elder_role_id'))}",
+                f"Member: {_mention(config.get('member_role_id'))}",
+            ]
+            embed.add_field(
+                name=f"{config['clan_name']} ({config['clan_tag']})",
+                value="\n".join(roles) + f"\nGrace: {'on' if config['grace_enabled'] else 'off'}",
+                inline=False,
+            )
+            embed.set_footer(text=f"{len(self.data.autoroles)} autorole config(s). Use the dropdown to inspect another.")
+        embed.add_field(
+            name="Manage",
+            value=(
+                f"{command_mention(self.bot, '/autorole set')} - setup clan roles\n"
+                f"{command_mention(self.bot, '/autorole sync')} - run role sync now\n"
+                f"{command_mention(self.bot, '/autorole remove')} - disable autorole for a clan"
+            ),
+            inline=False,
+        )
+
+    def _system_page(self, embed: discord.Embed) -> None:
+        snapshot = self.data.runtime
+        lines = []
+        for section in snapshot.get("sections", []):
+            items = section.get("items", [])
+            preview = ", ".join(f"{label}: {value}" for label, value in items[:2])
+            lines.append(f"**{section['title']}** - {preview or 'no values'}")
+        embed.add_field(name="Runtime", value="\n".join(lines[:8]) or "No runtime data.", inline=False)
+
+
+async def load_settings_data(bot: Any, interaction: discord.Interaction) -> SettingsHubData:
+    database = bot.state.database
+    profile = None
+    players: list[dict[str, Any]] = []
+    server_clans: list[dict[str, Any]] = []
+    announcements = None
+    autoroles: list[dict[str, Any]] = []
+    counts = await database.count_linking_rows()
+    try:
+        profile = await database.get_user_profile(interaction.user.id)
+        players = await database.list_player_links(interaction.user.id)
+        if interaction.guild_id is not None:
+            if can_manage_server(interaction):
+                server_clans = await database.list_server_clans(interaction.guild_id)
+                announcements = await database.get_announcement_channel(interaction.guild_id)
+            if can_manage_roles(interaction):
+                autoroles = await database.list_autorole_configs(guild_id=interaction.guild_id)
+    except RuntimeError:
+        pass
+    runtime = build_settings_snapshot(
+        bot.state,
+        discord_ready=bot.is_ready(),
+        latency_ms=None if bot.latency is None else round(bot.latency * 1000),
+        linking_counts=counts,
+    )
+    return SettingsHubData(profile, players, server_clans, announcements, autoroles, runtime)
+
+
+def available_pages(interaction: discord.Interaction) -> list[tuple[str, str]]:
+    pages = [("user", "My Setup")]
+    if can_manage_server(interaction):
+        pages.extend([("clans", "Clans"), ("feeds", "Feeds")])
+    if can_manage_roles(interaction):
+        pages.append(("autoroles", "Autoroles"))
+    if can_manage_server(interaction):
+        pages.append(("system", "System"))
+    return pages
+
+
+def can_manage_server(interaction: discord.Interaction) -> bool:
+    permissions = interaction.permissions
+    return bool(permissions and permissions.manage_guild)
+
+
+def can_manage_roles(interaction: discord.Interaction) -> bool:
+    permissions = interaction.permissions
+    return bool(permissions and permissions.manage_roles)
+
+
+def _mention(role_id: object | None) -> str:
+    return f"<@&{role_id}>" if role_id else "off"
 
 
 def build_settings_command() -> app_commands.Command[Any, ..., None]:
     async def settings_callback(interaction: discord.Interaction) -> None:
         bot = interaction.client
         if bot is None or not hasattr(bot, "state"):
-            await interaction.response.send_message(
-                "Settings are unavailable right now.",
-                ephemeral=False,
-            )
+            await interaction.response.send_message("Settings are unavailable right now.", ephemeral=True)
             return
 
-        bot._latest_linking_counts = await bot.state.database.count_linking_rows()
-        view = SettingsDashboardView(bot)
-        await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=False)
+        data = await load_settings_data(bot, interaction)
+        view = SettingsHubView(bot, interaction.user, data, available_pages(interaction))
+        await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
 
     return app_commands.Command(
         name="settings",
-        description="Show live runtime settings for this bot.",
+        description="Open your setup and server settings hub.",
         callback=settings_callback,
     )

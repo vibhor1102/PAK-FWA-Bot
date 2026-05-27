@@ -434,5 +434,30 @@ class AutoroleTests(unittest.TestCase):
         self.assertIn("@Leader", _role_hierarchy_issue(interaction, Role("Leader", 6)) or "")
 
 
+class SettingsHubTests(unittest.TestCase):
+    def test_regular_user_sees_only_user_page(self) -> None:
+        from bot.commands.settings import available_pages
+
+        interaction = SimpleNamespace(permissions=SimpleNamespace(manage_guild=False, manage_roles=False))
+
+        self.assertEqual(available_pages(interaction), [("user", "My Setup")])
+
+    def test_manager_pages_follow_permissions(self) -> None:
+        from bot.commands.settings import available_pages
+
+        interaction = SimpleNamespace(permissions=SimpleNamespace(manage_guild=True, manage_roles=True))
+
+        self.assertEqual(
+            available_pages(interaction),
+            [
+                ("user", "My Setup"),
+                ("clans", "Clans"),
+                ("feeds", "Feeds"),
+                ("autoroles", "Autoroles"),
+                ("system", "System"),
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
