@@ -20,7 +20,7 @@ class FeatureVisibility(StrEnum):
 class FeatureSpec:
     name: str
     visibility: FeatureVisibility
-    command: app_commands.Command[Any, ..., None]
+    command: app_commands.Command[Any, ..., None] | app_commands.Group
 
     def is_enabled(self, runtime_mode: RuntimeMode) -> bool:
         return visibility_allows(self.visibility, runtime_mode)

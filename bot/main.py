@@ -13,6 +13,7 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
+from .command_mentions import build_command_mentions
 from .config import AppConfig
 from .coc_service import CocService
 from .database import Database
@@ -33,6 +34,7 @@ class PakFwaBot(commands.Bot):
         intents = discord.Intents.default()
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.state = state
+        self.command_mentions: dict[str, str] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._startup_tasks_scheduled = False
 
@@ -88,10 +90,12 @@ async def sync_commands(bot: PakFwaBot) -> None:
         guild = discord.Object(id=guild_id)
         bot.tree.copy_global_to(guild=guild)
         synced = await bot.tree.sync(guild=guild)
+        bot.command_mentions = build_command_mentions(list(synced))
         LOGGER.info("Synced %s guild slash command(s) to guild %s.", len(synced), guild_id)
         return
 
     synced = await bot.tree.sync()
+    bot.command_mentions = build_command_mentions(list(synced))
     LOGGER.info("Synced %s global slash command(s).", len(synced))
 
 
@@ -114,10 +118,12 @@ def create_web_app(bot: PakFwaBot) -> web.Application:
         )
 
     async def settings(_request: web.Request) -> web.Response:
+        linking_counts = await bot.state.database.count_linking_rows()
         snapshot = build_settings_snapshot(
             bot.state,
             discord_ready=bot.is_ready(),
             latency_ms=None if bot.latency is None else round(bot.latency * 1000),
+            linking_counts=linking_counts,
         )
         return web.json_response(snapshot)
 

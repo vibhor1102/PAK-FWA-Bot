@@ -16,7 +16,13 @@ def yes_no(flag: bool) -> str:
     return "enabled" if flag else "disabled"
 
 
-def build_settings_snapshot(state: AppState, *, discord_ready: bool, latency_ms: int | None) -> dict[str, object]:
+def build_settings_snapshot(
+    state: AppState,
+    *,
+    discord_ready: bool,
+    latency_ms: int | None,
+    linking_counts: dict[str, int] | None = None,
+) -> dict[str, object]:
     config = state.config
     enabled_features = [
         spec.name
@@ -68,6 +74,16 @@ def build_settings_snapshot(state: AppState, *, discord_ready: bool, latency_ms:
             "items": [
                 ("Enabled now", ", ".join(enabled_features) if enabled_features else "none"),
                 ("Gate types", ", ".join(visibility.value for visibility in FeatureVisibility)),
+            ],
+        },
+        {
+            "title": "Linking",
+            "items": [
+                ("Ready", yes_no(state.database.connected)),
+                ("Server clans", str((linking_counts or {}).get("server_clans", 0))),
+                ("User clans", str((linking_counts or {}).get("user_clans", 0))),
+                ("Player links", str((linking_counts or {}).get("player_links", 0))),
+                ("Verified players", str((linking_counts or {}).get("verified_players", 0))),
             ],
         },
     ]

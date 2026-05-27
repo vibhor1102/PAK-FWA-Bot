@@ -26,6 +26,7 @@ from ..fwa_sources import (
     format_optional_float,
     format_yes_no,
 )
+from ..resolver import LinkResolutionError, LinkResolver
 
 
 LOGGER = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class ClanReportData:
 
 
 def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
-    @app_commands.describe(clan_tag="The clan tag to inspect, with or without the # prefix.")
+    @app_commands.describe(clan_tag="The clan tag, alias, or linked clan to inspect. Optional when a default exists.")
     @app_commands.describe(
         comparison_tag="Optional second clan tag to compare against. If omitted, the current war opponent is used when available.",
     )
@@ -63,7 +64,7 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
     )
     async def clan_report_callback(
         interaction: discord.Interaction,
-        clan_tag: str,
+        clan_tag: str | None = None,
         comparison_tag: str | None = None,
         war: WarFocus | None = None,
     ) -> None:
@@ -78,8 +79,12 @@ def build_clan_report_command() -> app_commands.Command[Any, ..., None]:
         await interaction.response.defer(thinking=True, ephemeral=False)
 
         try:
-            report = await build_clan_report(bot.state, clan_tag, comparison_tag, war_focus=war or "ongoing")
+            resolved = await LinkResolver(bot.state).resolve_clan_tag(interaction, clan_tag)
+            report = await build_clan_report(bot.state, resolved.tag, comparison_tag, war_focus=war or "ongoing")
         except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=False)
+            return
+        except LinkResolutionError as exc:
             await interaction.followup.send(str(exc), ephemeral=False)
             return
         except CocConfigurationError as exc:

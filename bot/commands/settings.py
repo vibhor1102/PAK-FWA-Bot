@@ -5,6 +5,7 @@ from typing import Any
 import discord
 from discord import app_commands
 
+from ..command_mentions import command_mention
 from ..settings_data import build_settings_snapshot
 
 
@@ -40,7 +41,9 @@ class SettingsDashboardView(discord.ui.View):
         super().__init__(timeout=600)
         self._bot = bot
         self._settings_snapshot = self._build_snapshot()
-        self._page_titles = ["Overview"] + [section["title"] for section in self._settings_snapshot["sections"]]
+        self._page_titles = ["Overview", "Commands"] + [
+            section["title"] for section in self._settings_snapshot["sections"]
+        ]
         self._page_index = max(0, min(page_index, len(self._page_titles) - 1))
         self._build_buttons()
 
@@ -49,6 +52,7 @@ class SettingsDashboardView(discord.ui.View):
             self._bot.state,
             discord_ready=self._bot.is_ready(),
             latency_ms=None if self._bot.latency is None else round(self._bot.latency * 1000),
+            linking_counts=getattr(self._bot, "_latest_linking_counts", None),
         )
 
     def _build_buttons(self) -> None:
@@ -67,6 +71,7 @@ class SettingsDashboardView(discord.ui.View):
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
     async def refresh(self, interaction: discord.Interaction) -> None:
+        self._bot._latest_linking_counts = await self._bot.state.database.count_linking_rows()
         new_view = SettingsDashboardView(self._bot, page_index=self._page_index)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
@@ -97,8 +102,39 @@ class SettingsDashboardView(discord.ui.View):
                     value=self._section_summary(section),
                     inline=False,
                 )
+        elif self._page_index == 1:
+            embed.description = "Clickable command shortcuts for the setup and linking flow."
+            embed.add_field(
+                name="Start here",
+                value=(
+                    f"{command_mention(self._bot, '/setup clan')} - Link a server or channel clan default.\n"
+                    f"{command_mention(self._bot, '/link create')} - Link a player or clan to a Discord user.\n"
+                    f"{command_mention(self._bot, '/link verify')} - Verify player ownership with the in-game API token."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Daily lookup",
+                value=(
+                    f"{command_mention(self._bot, '/profile')} - Show a linked Discord identity.\n"
+                    f"{command_mention(self._bot, '/player')} - Show a Clash player summary.\n"
+                    f"{command_mention(self._bot, '/clan')} - Show a Clash clan summary.\n"
+                    f"{command_mention(self._bot, '/clanreport')} - Generate the deeper clan report."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Maintenance",
+                value=(
+                    f"{command_mention(self._bot, '/setup list')} - Review server clan links.\n"
+                    f"{command_mention(self._bot, '/setup remove')} - Remove a server clan or channel default.\n"
+                    f"{command_mention(self._bot, '/link list')} - Review linked accounts.\n"
+                    f"{command_mention(self._bot, '/link delete')} - Remove a user player/clan link."
+                ),
+                inline=False,
+            )
         else:
-            section = self._settings_snapshot["sections"][self._page_index - 1]
+            section = self._settings_snapshot["sections"][self._page_index - 2]
             embed.description = f"Live details for the `{current_title}` section."
             for label, value in section["items"]:
                 embed.add_field(name=label, value=value, inline=False)
@@ -108,7 +144,7 @@ class SettingsDashboardView(discord.ui.View):
     def _overview_lines(self) -> list[str]:
         sections = self._settings_snapshot["sections"]
         lines = [
-            "This dashboard is designed to grow with the bot.",
+            f"Start setup with {command_mention(self._bot, '/setup clan')}, then link users with {command_mention(self._bot, '/link create')}.",
             "Each section below opens its own live card, and Refresh pulls the latest runtime state again.",
         ]
         for section in sections:
@@ -139,6 +175,7 @@ def build_settings_command() -> app_commands.Command[Any, ..., None]:
             )
             return
 
+        bot._latest_linking_counts = await bot.state.database.count_linking_rows()
         view = SettingsDashboardView(bot)
         await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=False)
 

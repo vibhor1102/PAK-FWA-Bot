@@ -5,6 +5,8 @@ from typing import Any
 import discord
 from discord import app_commands
 
+from ..command_mentions import command_mention
+
 
 class HelpPageButton(discord.ui.Button):
     def __init__(self, view: "HelpDashboardView", label: str, page_index: int, *, row: int) -> None:
@@ -37,7 +39,7 @@ class HelpDashboardView(discord.ui.View):
     def __init__(self, bot: Any, *, page_index: int = 0) -> None:
         super().__init__(timeout=600)
         self._bot = bot
-        self._page_titles = ["Overview", "Commands", "Clan Report", "Sources"]
+        self._page_titles = ["Overview", "Commands", "Linking", "Clan Report", "Sources"]
         self._page_index = max(0, min(page_index, len(self._page_titles) - 1))
         self._build_buttons()
 
@@ -101,8 +103,9 @@ class HelpDashboardView(discord.ui.View):
                 name="Quick Start",
                 value=(
                     "`/clanreport` pulls a deep clan intelligence report.\n"
-                    "`/settings` shows the live bot/runtime dashboard.\n"
-                    "`/help` opens this panel."
+                    f"{command_mention(self._bot, '/setup clan')} and {command_mention(self._bot, '/link create')} teach the bot your default tags.\n"
+                    f"{command_mention(self._bot, '/settings')} shows the live bot/runtime dashboard.\n"
+                    f"{command_mention(self._bot, '/help')} opens this panel."
                 ),
                 inline=False,
             )
@@ -116,19 +119,50 @@ class HelpDashboardView(discord.ui.View):
         elif self._page_index == 1:
             embed.add_field(
                 name="/settings",
-                value="Live runtime, database, Discord, Clash of Clans, and feature-state dashboard.",
+                value=f"{command_mention(self._bot, '/settings')} - Live runtime, database, Discord, Clash of Clans, and feature-state dashboard.",
                 inline=False,
             )
             embed.add_field(
                 name="/help",
-                value="This interactive help panel with section buttons and source links.",
+                value=f"{command_mention(self._bot, '/help')} - This interactive help panel with section buttons and source links.",
+                inline=False,
+            )
+            embed.add_field(
+                name="Lookup and linking",
+                value=(
+                    f"{command_mention(self._bot, '/clan')} - Clan summary from tag, alias, or default.\n"
+                    f"{command_mention(self._bot, '/player')} - Player summary from tag or linked user.\n"
+                    f"{command_mention(self._bot, '/profile')} - Linked Clash identity for a Discord user."
+                ),
                 inline=False,
             )
         elif self._page_index == 2:
             embed.add_field(
+                name="/setup clan",
+                value=f"{command_mention(self._bot, '/setup clan')} - Managers link a clan to the server or a specific channel so commands can infer clan tags.",
+                inline=False,
+            )
+            embed.add_field(
+                name="/link create, /link verify, /link list, /link delete",
+                value=(
+                    f"{command_mention(self._bot, '/link create')} - Add player and clan links.\n"
+                    f"{command_mention(self._bot, '/link verify')} - Mark player ownership verified.\n"
+                    f"{command_mention(self._bot, '/link list')} - Review linked accounts.\n"
+                    f"{command_mention(self._bot, '/link delete')} - Remove a linked player or clan."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="/profile",
+                value=f"{command_mention(self._bot, '/profile')} - Shows a user's linked clan and players with verified/default markers.",
+                inline=False,
+            )
+        elif self._page_index == 3:
+            embed.add_field(
                 name="/clanreport",
                 value=(
-                    "Generates a detailed clan intelligence report, including FWA Stats as the primary source, "
+                    f"{command_mention(self._bot, '/clanreport')} - Generates a detailed clan intelligence report. The clan tag is optional when a linked server, "
+                    "channel, or user clan can be inferred. It includes FWA Stats as the primary source, "
                     "points.fwafarm as the secondary cross-check, and war focus modes for `ongoing` or `recent`."
                 ),
                 inline=False,

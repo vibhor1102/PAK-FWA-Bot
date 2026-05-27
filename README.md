@@ -10,6 +10,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `bot/database.py` wraps PostgreSQL access.
 - `bot/coc_service.py` manages Clash of Clans API access for clan reporting.
 - `bot/commands/` holds slash-command modules.
+- `bot/resolver.py` resolves explicit, channel, server, and user-linked Clash tags for commands.
 - `bot/settings_data.py` powers both the `/settings` command and the `/settings` HTTP route.
 - `bot/main.py` wires everything together.
 - `render.yaml` defines the Render web service and environment variables.
@@ -20,6 +21,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `discord.py` bot runtime.
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
+- `/setup`, `/link`, `/profile`, `/player`, and `/clan` commands for Discord-first clan/player linking and lookup.
 - A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag and war focus selector.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
 - An `aiohttp` web server with:
@@ -48,6 +50,10 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `COC_THROTTLE_LIMIT` | Optional | Your preference | Passed through to `coc.py` to control request throttling. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
+
+## Attribution
+
+Clan/player linking UX is inspired by [ClashPerk](https://github.com/clashperk/clashperk), an MIT-licensed Clash of Clans Discord bot. See `NOTICE.md` for the repository-wide attribution. This bot remains a Python implementation and does not copy ClashPerk source files.
 
 ## Render setup
 
@@ -94,6 +100,7 @@ You said you can manage these, but make sure the following are done:
 5. If using `DISCORD_GUILD_ID`, copy the server ID from the same server where you invited the bot.
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
 7. If `/clanreport` says Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
+8. Use `/setup clan` to set a server or channel default clan, then `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, and `/clanreport` can then reuse those defaults.
 
 ## Local development
 
