@@ -22,6 +22,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
 - `/setup`, `/link`, `/profile`, `/player`, `/clan`, and `/fwa` commands for Discord-first clan/player linking, lookup, and active-war FWA instructions.
+- Proactive war monitoring for linked clans, with `/setup announcements` choosing where the bot posts war/FWA updates.
 - A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag and war focus selector.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
 - An `aiohttp` web server with:
@@ -48,6 +49,13 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `COC_KEY_NAME` / `COC_KEY_NAMES` | Optional | Your preference | Label used for keys that `coc.py` creates. The code accepts both names. |
 | `COC_KEY_SCOPES` | Optional | Your preference | Stored and shown in settings for visibility; the current `coc.py` client uses its own built-in key handling. |
 | `COC_THROTTLE_LIMIT` | Optional | Your preference | Passed through to `coc.py` to control request throttling. |
+| `WAR_MONITOR_INTERVAL_SECONDS` | Optional | Your preference | How often the background monitor checks linked clans through the official Clash API. Defaults to `300`. |
+| `FWA_EXTERNAL_LOOKUP_START_HOURS` | Optional | Your preference | Earliest hour after CoC reports a match when the monitor may query FWA Stats and points. Defaults to `2`. |
+| `FWA_EXTERNAL_LOOKUP_END_HOURS` | Optional | Your preference | Latest hour after CoC reports a match when the monitor may query FWA Stats and points. Defaults to `4`. |
+| `MANUAL_EXTERNAL_LOOKUP_TAG_COOLDOWN_SECONDS` | Optional | Your preference | Same-clan cooldown for manual `/fwa` external checks. Defaults to `180`. |
+| `AUTOMATIC_EXTERNAL_LOOKUP_TAG_COOLDOWN_SECONDS` | Optional | Your preference | Same-clan cooldown for background FWA/points checks. Defaults to `900`. |
+| `EXTERNAL_LOOKUP_USER_BURST_PER_MINUTE` | Optional | Your preference | Per-user manual FWA/points burst limit. Defaults to `3`. |
+| `EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE` | Optional | Your preference | Per-server manual FWA/points burst limit. Defaults to `12`. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
 
@@ -100,7 +108,14 @@ You said you can manage these, but make sure the following are done:
 5. If using `DISCORD_GUILD_ID`, copy the server ID from the same server where you invited the bot.
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
 7. If `/clanreport` says Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
-8. Use `/setup clan` to set a server or channel default clan, then `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, `/fwa`, and `/clanreport` can then reuse those defaults.
+8. Use `/setup clan` to set a server or channel default clan, then `/setup announcements` to choose where proactive war updates should post.
+9. Use `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, `/fwa`, and `/clanreport` can then reuse those defaults.
+
+## Proactive war monitor
+
+The bot polls linked server clans in the background once `DATABASE_URL` and Clash API credentials are configured. The official Clash of Clans API is the source of truth for active wars and war start times. FWA Stats and `points.fwafarm.com` are only queried during the configured early-war window after CoC confirms the match, so normal background checks do not continuously hit community endpoints.
+
+Use `/setup announcements` to set the channel for proactive posts. The monitor announces newly detected active wars, posts copy-ready FWA instructions when FWA Stats plus points data are available inside the lookup window, and records war snapshots for later command use. `/fwa` reuses the stored snapshot for the current war before attempting a guarded live refresh. Manual refreshes allow short human bursts but apply same-clan, per-user, and per-server limits to protect community endpoints.
 
 ## Local development
 

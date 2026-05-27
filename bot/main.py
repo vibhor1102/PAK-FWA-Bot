@@ -17,10 +17,12 @@ from .command_mentions import build_command_mentions
 from .config import AppConfig
 from .coc_service import CocService
 from .database import Database
+from .external_lookup_gate import ExternalLookupGate
 from .fwa_sources import FwaFarmService, FwaStatsService
 from .registry import build_feature_specs
 from .settings_data import build_settings_snapshot
 from .state import AppState
+from .war_monitor import run_war_monitor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +66,8 @@ class PakFwaBot(commands.Bot):
                     self.state.coc_service.get_client(),
                     "Clash of Clans client warmup",
                 )
+                if self.state.database.connected:
+                    self._schedule_background_task(run_war_monitor(self), "war monitor")
 
     def _schedule_background_task(self, awaitable: Any, label: str) -> None:
         task = asyncio.create_task(awaitable)
@@ -161,6 +165,7 @@ async def run() -> None:
         coc_service=coc_service,
         fwa_service=fwa_service,
         fwa_stats_service=fwa_stats_service,
+        external_lookup_gate=ExternalLookupGate(config),
         feature_specs=build_feature_specs(),
     )
 

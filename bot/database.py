@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -116,6 +117,54 @@ class Database:
                 on linked_players (user_id, is_default desc, created_at)
                 """
             )
+            await connection.execute(
+                """
+                create table if not exists announcement_channels (
+                    guild_id text primary key,
+                    channel_id text not null,
+                    war_found boolean not null default true,
+                    fwa_ready boolean not null default true,
+                    war_ended boolean not null default true,
+                    active boolean not null default true,
+                    created_at timestamptz not null default now(),
+                    updated_at timestamptz not null default now()
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists clan_war_snapshots (
+                    clan_tag text primary key,
+                    clan_name text,
+                    opponent_tag text,
+                    opponent_name text,
+                    state text,
+                    preparation_start timestamptz,
+                    battle_start timestamptz,
+                    battle_end timestamptz,
+                    team_size integer,
+                    war_key text,
+                    fwa_classification text,
+                    planned_result text,
+                    external_checked_at timestamptz,
+                    raw jsonb not null default '{}'::jsonb,
+                    updated_at timestamptz not null default now()
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists clan_war_announcements (
+                    id bigserial primary key,
+                    guild_id text not null,
+                    clan_tag text not null,
+                    event_key text not null,
+                    channel_id text not null,
+                    created_at timestamptz not null default now(),
+                    unique (guild_id, clan_tag, event_key)
+                )
+                """
+            )
 
     def _require_pool(self) -> asyncpg.Pool:
         if self.pool is None:
@@ -124,7 +173,14 @@ class Database:
 
     async def count_linking_rows(self) -> dict[str, int]:
         if self.pool is None:
-            return {"server_clans": 0, "user_clans": 0, "player_links": 0, "verified_players": 0}
+            return {
+                "server_clans": 0,
+                "user_clans": 0,
+                "player_links": 0,
+                "verified_players": 0,
+                "announcement_channels": 0,
+                "war_snapshots": 0,
+            }
 
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
@@ -133,10 +189,178 @@ class Database:
                     (select count(*) from linked_server_clans where active) as server_clans,
                     (select count(*) from linked_users where clan_tag is not null) as user_clans,
                     (select count(*) from linked_players) as player_links,
-                    (select count(*) from linked_players where verified) as verified_players
+                    (select count(*) from linked_players where verified) as verified_players,
+                    (select count(*) from announcement_channels where active) as announcement_channels,
+                    (select count(*) from clan_war_snapshots) as war_snapshots
                 """
             )
         return dict(row) if row is not None else {}
+
+    async def upsert_announcement_channel(
+        self,
+        *,
+        guild_id: int | str,
+        channel_id: int | str,
+        war_found: bool = True,
+        fwa_ready: bool = True,
+        war_ended: bool = True,
+    ) -> dict[str, Any]:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            insert into announcement_channels
+                (guild_id, channel_id, war_found, fwa_ready, war_ended, active)
+            values ($1, $2, $3, $4, $5, true)
+            on conflict (guild_id) do update set
+                channel_id = excluded.channel_id,
+                war_found = excluded.war_found,
+                fwa_ready = excluded.fwa_ready,
+                war_ended = excluded.war_ended,
+                active = true,
+                updated_at = now()
+            returning *
+            """,
+            str(guild_id),
+            str(channel_id),
+            war_found,
+            fwa_ready,
+            war_ended,
+        )
+        return dict(row)
+
+    async def get_announcement_channel(self, guild_id: int | str) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            "select * from announcement_channels where guild_id = $1 and active",
+            str(guild_id),
+        )
+        return dict(row) if row is not None else None
+
+    async def list_monitored_clans(self) -> list[dict[str, Any]]:
+        if self.pool is None:
+            return []
+
+        rows = await self.pool.fetch(
+            """
+            select
+                l.guild_id,
+                l.clan_tag,
+                l.clan_name,
+                l.channel_id as clan_channel_id,
+                a.channel_id as announcement_channel_id,
+                a.war_found,
+                a.fwa_ready,
+                a.war_ended
+            from linked_server_clans l
+            left join announcement_channels a
+                on a.guild_id = l.guild_id and a.active
+            where l.active
+            order by l.clan_tag, l.guild_id
+            """
+        )
+        return [dict(row) for row in rows]
+
+    async def get_war_snapshot(self, clan_tag: str) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow("select * from clan_war_snapshots where clan_tag = $1", clan_tag)
+        return dict(row) if row is not None else None
+
+    async def upsert_war_snapshot(
+        self,
+        *,
+        clan_tag: str,
+        clan_name: str | None,
+        opponent_tag: str | None,
+        opponent_name: str | None,
+        state: str,
+        preparation_start: Any,
+        battle_start: Any,
+        battle_end: Any,
+        team_size: int | None,
+        war_key: str,
+        fwa_classification: str | None = None,
+        planned_result: str | None = None,
+        external_checked_at: Any = None,
+        raw: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            insert into clan_war_snapshots
+                (
+                    clan_tag, clan_name, opponent_tag, opponent_name, state,
+                    preparation_start, battle_start, battle_end, team_size, war_key,
+                    fwa_classification, planned_result, external_checked_at, raw
+                )
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+            on conflict (clan_tag) do update set
+                clan_name = excluded.clan_name,
+                opponent_tag = excluded.opponent_tag,
+                opponent_name = excluded.opponent_name,
+                state = excluded.state,
+                preparation_start = excluded.preparation_start,
+                battle_start = excluded.battle_start,
+                battle_end = excluded.battle_end,
+                team_size = excluded.team_size,
+                war_key = excluded.war_key,
+                fwa_classification = case
+                    when clan_war_snapshots.war_key = excluded.war_key
+                    then coalesce(excluded.fwa_classification, clan_war_snapshots.fwa_classification)
+                    else excluded.fwa_classification
+                end,
+                planned_result = case
+                    when clan_war_snapshots.war_key = excluded.war_key
+                    then coalesce(excluded.planned_result, clan_war_snapshots.planned_result)
+                    else excluded.planned_result
+                end,
+                external_checked_at = case
+                    when clan_war_snapshots.war_key = excluded.war_key
+                    then coalesce(excluded.external_checked_at, clan_war_snapshots.external_checked_at)
+                    else excluded.external_checked_at
+                end,
+                raw = excluded.raw,
+                updated_at = now()
+            returning *
+            """,
+            clan_tag,
+            clan_name,
+            opponent_tag,
+            opponent_name,
+            state,
+            preparation_start,
+            battle_start,
+            battle_end,
+            team_size,
+            war_key,
+            fwa_classification,
+            planned_result,
+            external_checked_at,
+            json.dumps(raw or {}),
+        )
+        return dict(row)
+
+    async def mark_announcement_sent(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        event_key: str,
+        channel_id: int | str,
+    ) -> bool:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            insert into clan_war_announcements (guild_id, clan_tag, event_key, channel_id)
+            values ($1, $2, $3, $4)
+            on conflict (guild_id, clan_tag, event_key) do nothing
+            returning id
+            """,
+            str(guild_id),
+            clan_tag,
+            event_key,
+            str(channel_id),
+        )
+        return row is not None
 
     async def upsert_user(self, *, user_id: int | str, username: str, display_name: str) -> None:
         pool = self._require_pool()

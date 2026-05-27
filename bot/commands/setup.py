@@ -89,6 +89,25 @@ def build_setup_group() -> app_commands.Group:
                 nickname = f" as **{clan['nickname']}**" if clan.get("nickname") else ""
                 lines.append(f"- **{clan['clan_name']}** (`{clan['clan_tag']}`){nickname}, {channel}{alias}")
             embed.description = "\n".join(lines)
+        try:
+            announcements = await interaction.client.state.database.get_announcement_channel(interaction.guild_id)  # type: ignore[attr-defined]
+        except RuntimeError:
+            announcements = None
+        if announcements:
+            enabled = [
+                name
+                for name, flag in (
+                    ("war found", announcements["war_found"]),
+                    ("FWA ready", announcements["fwa_ready"]),
+                    ("war ended", announcements["war_ended"]),
+                )
+                if flag
+            ]
+            embed.add_field(
+                name="Announcement channel",
+                value=f"<#{announcements['channel_id']}> ({', '.join(enabled) or 'none'})",
+                inline=False,
+            )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @group.command(name="remove", description="Remove a linked server clan or channel default.")
@@ -124,5 +143,49 @@ def build_setup_group() -> app_commands.Group:
 
         target = channel.mention if channel else f"{removed['clan_name']} (`{removed['clan_tag']}`)"
         await interaction.followup.send(f"Removed the linked clan setting for {target}.", ephemeral=True)
+
+    @group.command(name="announcements", description="Set the channel for proactive war announcements.")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.describe(channel="Channel where the bot should post proactive war/FWA announcements.")
+    @app_commands.describe(war_found="Post when the official Clash API finds a new active war.")
+    @app_commands.describe(fwa_ready="Post copy-ready FWA instructions when external data is ready.")
+    @app_commands.describe(war_ended="Reserve war-ended announcements for the background monitor.")
+    async def setup_announcements(
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | discord.Thread,
+        war_found: bool = True,
+        fwa_ready: bool = True,
+        war_ended: bool = True,
+    ) -> None:
+        if not _require_guild(interaction):
+            await interaction.response.send_message("Server setup can only be used inside a Discord server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        try:
+            linked = await interaction.client.state.database.upsert_announcement_channel(  # type: ignore[attr-defined]
+                guild_id=interaction.guild_id,
+                channel_id=channel.id,
+                war_found=war_found,
+                fwa_ready=fwa_ready,
+                war_ended=war_ended,
+            )
+        except RuntimeError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        enabled = [
+            name
+            for name, flag in (
+                ("war found", linked["war_found"]),
+                ("FWA ready", linked["fwa_ready"]),
+                ("war ended", linked["war_ended"]),
+            )
+            if flag
+        ]
+        await interaction.followup.send(
+            f"Proactive announcements will post in {channel.mention}. Enabled: {', '.join(enabled) or 'none'}.",
+            ephemeral=True,
+        )
 
     return group

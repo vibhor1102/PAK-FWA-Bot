@@ -70,6 +70,23 @@ def build_settings_snapshot(
             ],
         },
         {
+            "title": "Proactive War Monitor",
+            "items": [
+                ("Enabled", yes_no(state.database.connected and state.coc_service.configured)),
+                ("Poll interval", f"{config.war_monitor_interval_seconds}s"),
+                (
+                    "FWA/points window",
+                    f"{config.fwa_external_lookup_start_hours}-{config.fwa_external_lookup_end_hours}h after match",
+                ),
+                ("Manual same-clan cooldown", f"{config.manual_external_lookup_tag_cooldown_seconds}s"),
+                ("Auto same-clan cooldown", f"{config.automatic_external_lookup_tag_cooldown_seconds}s"),
+                ("Manual user burst", f"{config.external_lookup_user_burst_per_minute}/min"),
+                ("Manual server burst", f"{config.external_lookup_guild_burst_per_minute}/min"),
+                ("Announcement channels", str((linking_counts or {}).get("announcement_channels", 0))),
+                ("War snapshots", str((linking_counts or {}).get("war_snapshots", 0))),
+            ],
+        },
+        {
             "title": "Features",
             "items": [
                 ("Enabled now", ", ".join(enabled_features) if enabled_features else "none"),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -236,6 +237,134 @@ class FwaCommandTests(unittest.TestCase):
         self.assertTrue(text.startswith("🟩WIN WAR vs NO WAR 🟩"))
         self.assertNotIn("```", text)
         self.assertNotIn("FWA points", text)
+
+
+class WarMonitorTests(unittest.TestCase):
+    def test_external_lookup_only_inside_configured_window(self) -> None:
+        from bot.war_monitor import _external_lookup_allowed
+
+        now = datetime.now(timezone.utc)
+        bot = SimpleNamespace(
+            state=SimpleNamespace(
+                config=SimpleNamespace(
+                    fwa_external_lookup_start_hours=2,
+                    fwa_external_lookup_end_hours=4,
+                )
+            )
+        )
+        inside = SimpleNamespace(preparation_start_time=SimpleNamespace(time=now - timedelta(hours=3)))
+        too_early = SimpleNamespace(preparation_start_time=SimpleNamespace(time=now - timedelta(hours=1)))
+        too_late = SimpleNamespace(preparation_start_time=SimpleNamespace(time=now - timedelta(hours=5)))
+
+        self.assertTrue(_external_lookup_allowed(bot, inside))
+        self.assertFalse(_external_lookup_allowed(bot, too_early))
+        self.assertFalse(_external_lookup_allowed(bot, too_late))
+
+    def test_war_key_includes_opponent_and_start_time(self) -> None:
+        from bot.war_monitor import _war_key
+
+        started = datetime(2026, 5, 27, 12, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(
+            _war_key("#AAA", "#BBB", started, None),
+            "#AAA:#BBB:2026-05-27T12:00:00+00:00",
+        )
+
+    def test_monitor_rehydrates_known_fwa_instruction_from_snapshot(self) -> None:
+        from bot.war_monitor import MonitoredWar, _hydrate_from_snapshot
+
+        war = MonitoredWar(
+            clan_tag="#AAA",
+            clan_name="Our Clan",
+            opponent_tag="#BBB",
+            opponent_name="Enemy Clan",
+            state="preparation",
+            war_key="#AAA:#BBB:2026-05-27T12:00:00+00:00",
+            preparation_start=datetime(2026, 5, 27, 12, 0, tzinfo=timezone.utc),
+            battle_start=None,
+            battle_end=None,
+            team_size=50,
+        )
+
+        _hydrate_from_snapshot(
+            war,
+            {
+                "war_key": "#AAA:#BBB:2026-05-27T12:00:00+00:00",
+                "planned_result": "win",
+                "opponent_name": "Enemy Clan",
+                "fwa_classification": "fwa",
+            },
+        )
+
+        self.assertEqual(war.event_kind, "win")
+        self.assertIn("🟩WIN WAR vs Enemy Clan 🟩", war.event_message or "")
+
+    def test_monitor_ignores_snapshot_from_previous_war(self) -> None:
+        from bot.war_monitor import MonitoredWar, _hydrate_from_snapshot
+
+        war = MonitoredWar(
+            clan_tag="#AAA",
+            clan_name="Our Clan",
+            opponent_tag="#BBB",
+            opponent_name="Enemy Clan",
+            state="preparation",
+            war_key="#AAA:#BBB:new",
+            preparation_start=None,
+            battle_start=None,
+            battle_end=None,
+            team_size=50,
+        )
+
+        _hydrate_from_snapshot(war, {"war_key": "#AAA:#BBB:old", "planned_result": "win"})
+
+        self.assertIsNone(war.event_message)
+
+
+class ExternalLookupGateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_gate_allows_small_different_clan_burst(self) -> None:
+        from bot.external_lookup_gate import ExternalLookupGate
+
+        config = SimpleNamespace(
+            manual_external_lookup_tag_cooldown_seconds=180,
+            automatic_external_lookup_tag_cooldown_seconds=900,
+            external_lookup_user_burst_per_minute=3,
+            external_lookup_guild_burst_per_minute=12,
+        )
+        gate = ExternalLookupGate(config)
+
+        decisions = [
+            await gate.acquire_manual(clan_tag=tag, user_id=1, guild_id=2, last_checked_at=None)
+            for tag in ("#AAA", "#BBB", "#CCC")
+        ]
+
+        self.assertTrue(all(decision.allowed for decision in decisions))
+
+    async def test_manual_gate_cools_down_same_clan(self) -> None:
+        from bot.external_lookup_gate import ExternalLookupGate
+
+        config = SimpleNamespace(
+            manual_external_lookup_tag_cooldown_seconds=180,
+            automatic_external_lookup_tag_cooldown_seconds=900,
+            external_lookup_user_burst_per_minute=3,
+            external_lookup_guild_burst_per_minute=12,
+        )
+        gate = ExternalLookupGate(config)
+
+        first = await gate.acquire_manual(clan_tag="#AAA", user_id=1, guild_id=2, last_checked_at=None)
+        second = await gate.acquire_manual(clan_tag="#AAA", user_id=1, guild_id=2, last_checked_at=None)
+
+        self.assertTrue(first.allowed)
+        self.assertFalse(second.allowed)
+        self.assertGreater(second.retry_after_seconds, 0)
+
+    def test_manual_wait_message_hides_technical_details(self) -> None:
+        from bot.commands.fwa import _manual_lookup_wait_message
+
+        text = _manual_lookup_wait_message(180)
+
+        self.assertIn("Try again", text)
+        self.assertNotIn("cache", text.lower())
+        self.assertNotIn("rate", text.lower())
 
 
 if __name__ == "__main__":

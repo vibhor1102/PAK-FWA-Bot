@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import asyncio
@@ -108,12 +109,28 @@ def build_fwa_command() -> app_commands.Command[Any, ..., None]:
 
         primary_tag = normalize_tag(war.clan.tag)
         opponent_tag = normalize_tag(war.opponent.tag)
-        primary_stats, opponent_stats, primary_points, opponent_points = await asyncio.gather(
-            state.fwa_stats_service.build_clan_record(primary_tag),
-            state.fwa_stats_service.build_clan_record(opponent_tag),
-            state.fwa_service.lookup_points(primary_tag),
-            state.fwa_service.lookup_points(opponent_tag),
-        )
+        cached_event = await _event_from_cached_snapshot(state, war, primary_tag, opponent_tag)
+        if cached_event is not None:
+            public_sent = await _send_event_message(interaction, war, cached_event)
+            if public_sent:
+                await interaction.followup.send(_copy_block(cached_event), ephemeral=True)
+            else:
+                await interaction.followup.send(_fallback_main_message(cached_event), ephemeral=False)
+            return
+
+        decision = await _manual_external_lookup_decision(state, interaction, primary_tag)
+        if not decision.allowed:
+            await interaction.followup.send(_manual_lookup_wait_message(decision.retry_after_seconds), ephemeral=True)
+            return
+
+        async with state.external_lookup_gate.endpoint_slot():
+            primary_stats, opponent_stats, primary_points, opponent_points = await asyncio.gather(
+                state.fwa_stats_service.build_clan_record(primary_tag),
+                state.fwa_stats_service.build_clan_record(opponent_tag),
+                state.fwa_service.lookup_points(primary_tag),
+                state.fwa_service.lookup_points(opponent_tag),
+            )
+        await _store_external_attempt(state, war, primary_tag, opponent_tag)
         current_record = _select_matching_fwa_war(primary_stats, opponent_tag)
 
         if current_record is None:
@@ -168,6 +185,7 @@ def build_fwa_command() -> app_commands.Command[Any, ..., None]:
             await _send_public_error(interaction, war, debug_text)
             return
 
+        await _store_event_snapshot(state, war, primary_tag, opponent_tag, event)
         public_sent = await _send_event_message(interaction, war, event)
         if public_sent:
             await interaction.followup.send(_copy_block(event), ephemeral=True)
@@ -249,6 +267,115 @@ def _same_tag(left: str | None, right: str | None) -> bool:
 
 def _fwa_record_matches_official_war(record: FwaStatsWarRecord, war: coc.ClanWar) -> bool:
     return _same_tag(record.clan_tag, war.clan.tag) and _same_tag(record.opponent_tag, war.opponent.tag)
+
+
+async def _event_from_cached_snapshot(
+    state: Any,
+    war: coc.ClanWar,
+    primary_tag: str,
+    opponent_tag: str,
+) -> FwaEvent | None:
+    try:
+        snapshot = await state.database.get_war_snapshot(primary_tag)
+    except RuntimeError:
+        return None
+    if not snapshot:
+        return None
+    if snapshot.get("war_key") != _war_key(primary_tag, opponent_tag, war):
+        return None
+    kind = snapshot.get("planned_result")
+    if kind not in {"win", "lose", "mismatch", "blacklist"}:
+        return None
+
+    return FwaEvent(
+        kind=kind,
+        opponent_name=snapshot.get("opponent_name") or war.opponent.name,
+        war_record=SimpleNamespace(),
+        classification=snapshot.get("fwa_classification") or "unknown",
+    )
+
+
+def _war_key(primary_tag: str, opponent_tag: str, war: coc.ClanWar) -> str:
+    started = _timestamp_to_datetime(getattr(war, "preparation_start_time", None))
+    if started is None:
+        started = _timestamp_to_datetime(getattr(war, "start_time", None))
+    started_key = started.isoformat(timespec="seconds") if started is not None else "unknown"
+    return f"{primary_tag}:{opponent_tag}:{started_key}"
+
+
+def _external_lookup_allowed(state: Any, war: coc.ClanWar) -> bool:
+    elapsed = _hours_since_match(war)
+    if elapsed is None:
+        return False
+    config = state.config
+    return config.fwa_external_lookup_start_hours <= elapsed <= config.fwa_external_lookup_end_hours
+
+
+async def _manual_external_lookup_decision(state: Any, interaction: discord.Interaction, primary_tag: str) -> Any:
+    snapshot = None
+    try:
+        snapshot = await state.database.get_war_snapshot(primary_tag)
+    except RuntimeError:
+        pass
+    return await state.external_lookup_gate.acquire_manual(
+        clan_tag=primary_tag,
+        user_id=interaction.user.id,
+        guild_id=interaction.guild_id,
+        last_checked_at=snapshot.get("external_checked_at") if snapshot else None,
+    )
+
+
+def _manual_lookup_wait_message(retry_after_seconds: int) -> str:
+    minutes = max(1, round(retry_after_seconds / 60))
+    return f"I just checked this war recently. Try again in about {minutes} min."
+
+
+async def _store_event_snapshot(
+    state: Any,
+    war: coc.ClanWar,
+    primary_tag: str,
+    opponent_tag: str,
+    event: FwaEvent,
+) -> None:
+    try:
+        await state.database.upsert_war_snapshot(
+            clan_tag=primary_tag,
+            clan_name=war.clan.name,
+            opponent_tag=opponent_tag,
+            opponent_name=war.opponent.name,
+            state=str(getattr(getattr(war, "state", ""), "name", getattr(war, "state", ""))),
+            preparation_start=_timestamp_to_datetime(getattr(war, "preparation_start_time", None)),
+            battle_start=_timestamp_to_datetime(getattr(war, "start_time", None)),
+            battle_end=_timestamp_to_datetime(getattr(war, "end_time", None)),
+            team_size=getattr(war, "team_size", None),
+            war_key=_war_key(primary_tag, opponent_tag, war),
+            fwa_classification=event.classification,
+            planned_result=event.kind,
+            external_checked_at=datetime.now(timezone.utc),
+            raw={"source": "manual_fwa_command", "event_kind": event.kind, "classification": event.classification},
+        )
+    except RuntimeError:
+        return
+
+
+async def _store_external_attempt(state: Any, war: coc.ClanWar, primary_tag: str, opponent_tag: str) -> None:
+    try:
+        await state.database.upsert_war_snapshot(
+            clan_tag=primary_tag,
+            clan_name=war.clan.name,
+            opponent_tag=opponent_tag,
+            opponent_name=war.opponent.name,
+            state=str(getattr(getattr(war, "state", ""), "name", getattr(war, "state", ""))),
+            preparation_start=_timestamp_to_datetime(getattr(war, "preparation_start_time", None)),
+            battle_start=_timestamp_to_datetime(getattr(war, "start_time", None)),
+            battle_end=_timestamp_to_datetime(getattr(war, "end_time", None)),
+            team_size=getattr(war, "team_size", None),
+            war_key=_war_key(primary_tag, opponent_tag, war),
+            external_checked_at=datetime.now(timezone.utc),
+            raw={"source": "manual_fwa_command", "event_kind": None},
+        )
+    except RuntimeError:
+        return
 
 
 def _event_from_record(

@@ -33,6 +33,13 @@ class AppConfig:
     coc_key_names: str
     coc_key_scopes: tuple[str, ...]
     coc_throttle_limit: int
+    war_monitor_interval_seconds: int
+    fwa_external_lookup_start_hours: int
+    fwa_external_lookup_end_hours: int
+    manual_external_lookup_tag_cooldown_seconds: int
+    automatic_external_lookup_tag_cooldown_seconds: int
+    external_lookup_user_burst_per_minute: int
+    external_lookup_guild_burst_per_minute: int
 
     @classmethod
     def from_environment(cls) -> "AppConfig":
@@ -55,6 +62,21 @@ class AppConfig:
         )
         coc_key_scopes = _read_csv("COC_KEY_SCOPES")
         coc_throttle_limit = _read_positive_int("COC_THROTTLE_LIMIT", 30)
+        war_monitor_interval_seconds = _read_positive_int("WAR_MONITOR_INTERVAL_SECONDS", 300)
+        fwa_external_lookup_start_hours = _read_positive_int("FWA_EXTERNAL_LOOKUP_START_HOURS", 2)
+        fwa_external_lookup_end_hours = _read_positive_int("FWA_EXTERNAL_LOOKUP_END_HOURS", 4)
+        manual_external_lookup_tag_cooldown_seconds = _read_positive_int(
+            "MANUAL_EXTERNAL_LOOKUP_TAG_COOLDOWN_SECONDS",
+            180,
+        )
+        automatic_external_lookup_tag_cooldown_seconds = _read_positive_int(
+            "AUTOMATIC_EXTERNAL_LOOKUP_TAG_COOLDOWN_SECONDS",
+            900,
+        )
+        external_lookup_user_burst_per_minute = _read_positive_int("EXTERNAL_LOOKUP_USER_BURST_PER_MINUTE", 3)
+        external_lookup_guild_burst_per_minute = _read_positive_int("EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE", 12)
+        if fwa_external_lookup_end_hours <= fwa_external_lookup_start_hours:
+            raise RuntimeError("FWA_EXTERNAL_LOOKUP_END_HOURS must be greater than FWA_EXTERNAL_LOOKUP_START_HOURS")
 
         return cls(
             runtime_mode=runtime_mode,
@@ -71,6 +93,13 @@ class AppConfig:
             coc_key_names=coc_key_names,
             coc_key_scopes=coc_key_scopes,
             coc_throttle_limit=coc_throttle_limit,
+            war_monitor_interval_seconds=war_monitor_interval_seconds,
+            fwa_external_lookup_start_hours=fwa_external_lookup_start_hours,
+            fwa_external_lookup_end_hours=fwa_external_lookup_end_hours,
+            manual_external_lookup_tag_cooldown_seconds=manual_external_lookup_tag_cooldown_seconds,
+            automatic_external_lookup_tag_cooldown_seconds=automatic_external_lookup_tag_cooldown_seconds,
+            external_lookup_user_burst_per_minute=external_lookup_user_burst_per_minute,
+            external_lookup_guild_burst_per_minute=external_lookup_guild_burst_per_minute,
         )
 
 
