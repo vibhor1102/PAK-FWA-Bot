@@ -4,6 +4,7 @@ from .fwa import build_fwa_command
 from .help import build_help_command
 from .link import build_link_group
 from .player import build_player_command
+from .ping import build_ping_command
 from .profile import build_profile_command
 from .settings import build_settings_command
 from .setup import build_setup_group
@@ -15,6 +16,7 @@ __all__ = [
     "build_help_command",
     "build_link_group",
     "build_player_command",
+    "build_ping_command",
     "build_profile_command",
     "build_settings_command",
     "build_setup_group",

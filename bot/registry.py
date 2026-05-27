@@ -7,6 +7,7 @@ from .commands import (
     build_help_command,
     build_link_group,
     build_player_command,
+    build_ping_command,
     build_profile_command,
     build_settings_command,
     build_setup_group,
@@ -25,6 +26,11 @@ def build_feature_specs() -> tuple[FeatureSpec, ...]:
             name="settings",
             visibility=FeatureVisibility.all,
             command=build_settings_command(),
+        ),
+        FeatureSpec(
+            name="ping",
+            visibility=FeatureVisibility.all,
+            command=build_ping_command(),
         ),
         FeatureSpec(
             name="setup",

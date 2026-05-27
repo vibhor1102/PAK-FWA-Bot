@@ -26,6 +26,7 @@ def build_help_embed(bot: Any) -> discord.Embed:
         name="Start",
         value=(
             f"{command_mention(bot, '/settings')} - Open your setup hub.\n"
+            f"{command_mention(bot, '/ping')} - Check bot responsiveness.\n"
             f"{command_mention(bot, '/setup clan')} - Link a clan to this server or channel.\n"
             f"{command_mention(bot, '/setup player')} - Link a player account.\n"
             f"{command_mention(bot, '/setup user-clan')} - Link your clan."
