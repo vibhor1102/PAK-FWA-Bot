@@ -120,8 +120,7 @@ class SettingsDashboardView(discord.ui.View):
                     f"{command_mention(self._bot, '/profile')} - Show a linked Discord identity.\n"
                     f"{command_mention(self._bot, '/player')} - Show a Clash player summary.\n"
                     f"{command_mention(self._bot, '/clan')} - Show a Clash clan summary.\n"
-                    f"{command_mention(self._bot, '/fwa')} - Check active war FWA instructions.\n"
-                    f"{command_mention(self._bot, '/clanreport')} - Generate the deeper clan report."
+                    f"{command_mention(self._bot, '/fwa')} - Check active war FWA instructions."
                 ),
                 inline=False,
             )
