@@ -94,6 +94,15 @@ def build_settings_snapshot(
             ],
         },
         {
+            "title": "Autorole",
+            "items": [
+                ("Enabled", yes_no(state.database.connected and state.coc_service.configured)),
+                ("Sync interval", f"{config.autorole_sync_interval_seconds}s"),
+                ("Grace retention", f"{config.autorole_retention_days} days"),
+                ("Configured clans", str((linking_counts or {}).get("autorole_configs", 0))),
+            ],
+        },
+        {
             "title": "Linking",
             "items": [
                 ("Ready", yes_no(state.database.connected)),

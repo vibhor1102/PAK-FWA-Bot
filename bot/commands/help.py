@@ -39,7 +39,7 @@ class HelpDashboardView(discord.ui.View):
     def __init__(self, bot: Any, *, page_index: int = 0) -> None:
         super().__init__(timeout=600)
         self._bot = bot
-        self._page_titles = ["Overview", "Commands", "Linking", "Clan Report", "Sources"]
+        self._page_titles = ["Overview", "Commands", "Linking", "Autorole", "Clan Report", "Sources"]
         self._page_index = max(0, min(page_index, len(self._page_titles) - 1))
         self._build_buttons()
 
@@ -133,6 +133,7 @@ class HelpDashboardView(discord.ui.View):
                     f"{command_mention(self._bot, '/clan')} - Clan summary from tag, alias, or default.\n"
                     f"{command_mention(self._bot, '/player')} - Player summary from tag or linked user.\n"
                     f"{command_mention(self._bot, '/fwa')} - Active-war FWA instructions and safety checks.\n"
+                    f"{command_mention(self._bot, '/autorole set')} - Linked-player clan role mapping.\n"
                     f"{command_mention(self._bot, '/profile')} - Linked Clash identity for a Discord user."
                 ),
                 inline=False,
@@ -159,6 +160,30 @@ class HelpDashboardView(discord.ui.View):
                 inline=False,
             )
         elif self._page_index == 3:
+            embed.add_field(
+                name="/autorole set",
+                value=(
+                    f"{command_mention(self._bot, '/autorole set')} - Maps Discord roles for clan members, leader, co-leader, elder, and member ranks."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="/autorole sync",
+                value=(
+                    f"{command_mention(self._bot, '/autorole sync')} - Runs linked-player role sync now. "
+                    "Grace mode keeps the highest observed rank from the retention window."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="/autorole list, /autorole remove",
+                value=(
+                    f"{command_mention(self._bot, '/autorole list')} - Review server autorole configs.\n"
+                    f"{command_mention(self._bot, '/autorole remove')} - Disable autorole for a clan."
+                ),
+                inline=False,
+            )
+        elif self._page_index == 4:
             embed.add_field(
                 name="/fwa",
                 value=(

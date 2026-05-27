@@ -1,3 +1,4 @@
+from .autorole import build_autorole_group
 from .clan import build_clan_command
 from .clan_report import build_clan_report_command
 from .fwa import build_fwa_command
@@ -10,6 +11,7 @@ from .setup import build_setup_group
 
 __all__ = [
     "build_clan_command",
+    "build_autorole_group",
     "build_clan_report_command",
     "build_fwa_command",
     "build_help_command",

@@ -367,5 +367,72 @@ class ExternalLookupGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("rate", text.lower())
 
 
+class AutoroleTests(unittest.TestCase):
+    def test_rank_normalization_and_weight(self) -> None:
+        from bot.autorole import normalize_clan_role, rank_weight_for_role
+
+        self.assertEqual(normalize_clan_role("coLeader"), "co_leader")
+        self.assertEqual(normalize_clan_role("admin"), "elder")
+        self.assertGreater(rank_weight_for_role("leader"), rank_weight_for_role("elder"))
+
+    def test_desired_roles_union_multiple_accounts(self) -> None:
+        from bot.autorole import desired_roles_by_user
+
+        config = {
+            "general_role_id": "10",
+            "leader_role_id": "11",
+            "co_leader_role_id": "12",
+            "elder_role_id": "13",
+            "member_role_id": "14",
+        }
+        rows = [
+            {"user_id": "1", "clan_role": "leader"},
+            {"user_id": "1", "clan_role": "member"},
+        ]
+
+        desired = desired_roles_by_user(config, rows)
+
+        self.assertEqual(desired["1"], {"10", "11", "14"})
+
+    def test_desired_roles_uses_highest_rank_rows_from_database(self) -> None:
+        from bot.autorole import desired_roles_by_user
+
+        config = {
+            "general_role_id": "10",
+            "leader_role_id": "11",
+            "co_leader_role_id": "12",
+            "elder_role_id": "13",
+            "member_role_id": "14",
+        }
+        rows = [{"user_id": "1", "clan_role": "co_leader"}]
+
+        self.assertEqual(desired_roles_by_user(config, rows)["1"], {"10", "12"})
+
+    def test_autorole_permission_prompt_mentions_manage_roles(self) -> None:
+        from bot.commands.autorole import _bot_role_setup_issue
+
+        me = SimpleNamespace(guild_permissions=SimpleNamespace(manage_roles=False))
+        interaction = SimpleNamespace(guild=SimpleNamespace(me=me))
+
+        self.assertIn("Manage Roles", _bot_role_setup_issue(interaction) or "")
+
+    def test_autorole_hierarchy_prompt_names_blocked_role(self) -> None:
+        from bot.commands.autorole import _role_hierarchy_issue
+
+        class Role:
+            def __init__(self, name: str, position: int) -> None:
+                self.name = name
+                self.position = position
+                self.mention = f"@{name}"
+
+            def __ge__(self, other: "Role") -> bool:
+                return self.position >= other.position
+
+        me = SimpleNamespace(top_role=Role("Bot", 5))
+        interaction = SimpleNamespace(guild=SimpleNamespace(me=me))
+
+        self.assertIn("@Leader", _role_hierarchy_issue(interaction, Role("Leader", 6)) or "")
+
+
 if __name__ == "__main__":
     unittest.main()

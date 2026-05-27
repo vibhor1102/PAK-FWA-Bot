@@ -40,6 +40,8 @@ class AppConfig:
     automatic_external_lookup_tag_cooldown_seconds: int
     external_lookup_user_burst_per_minute: int
     external_lookup_guild_burst_per_minute: int
+    autorole_sync_interval_seconds: int
+    autorole_retention_days: int
 
     @classmethod
     def from_environment(cls) -> "AppConfig":
@@ -75,6 +77,8 @@ class AppConfig:
         )
         external_lookup_user_burst_per_minute = _read_positive_int("EXTERNAL_LOOKUP_USER_BURST_PER_MINUTE", 3)
         external_lookup_guild_burst_per_minute = _read_positive_int("EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE", 12)
+        autorole_sync_interval_seconds = _read_positive_int("AUTOROLE_SYNC_INTERVAL_SECONDS", 1800)
+        autorole_retention_days = _read_positive_int("AUTOROLE_RETENTION_DAYS", 3)
         if fwa_external_lookup_end_hours <= fwa_external_lookup_start_hours:
             raise RuntimeError("FWA_EXTERNAL_LOOKUP_END_HOURS must be greater than FWA_EXTERNAL_LOOKUP_START_HOURS")
 
@@ -100,6 +104,8 @@ class AppConfig:
             automatic_external_lookup_tag_cooldown_seconds=automatic_external_lookup_tag_cooldown_seconds,
             external_lookup_user_burst_per_minute=external_lookup_user_burst_per_minute,
             external_lookup_guild_burst_per_minute=external_lookup_guild_burst_per_minute,
+            autorole_sync_interval_seconds=autorole_sync_interval_seconds,
+            autorole_retention_days=autorole_retention_days,
         )
 
 

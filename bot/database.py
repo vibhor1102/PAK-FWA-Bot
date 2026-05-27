@@ -165,6 +165,66 @@ class Database:
                 )
                 """
             )
+            await connection.execute(
+                """
+                create table if not exists autorole_configs (
+                    guild_id text not null,
+                    clan_tag text not null,
+                    clan_name text not null,
+                    general_role_id text,
+                    leader_role_id text,
+                    co_leader_role_id text,
+                    elder_role_id text,
+                    member_role_id text,
+                    grace_enabled boolean not null default true,
+                    active boolean not null default true,
+                    last_synced_at timestamptz,
+                    created_at timestamptz not null default now(),
+                    updated_at timestamptz not null default now(),
+                    primary key (guild_id, clan_tag)
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists autorole_observations (
+                    id bigserial primary key,
+                    guild_id text not null,
+                    clan_tag text not null,
+                    player_tag text not null,
+                    user_id text not null,
+                    player_name text not null,
+                    clan_role text not null,
+                    rank_weight integer not null,
+                    observed_at timestamptz not null default now()
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create index if not exists autorole_observations_lookup_idx
+                on autorole_observations (guild_id, clan_tag, player_tag, observed_at desc)
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists autorole_assignments (
+                    guild_id text not null,
+                    clan_tag text not null,
+                    user_id text not null,
+                    role_id text not null,
+                    desired boolean not null default true,
+                    last_applied_at timestamptz not null default now(),
+                    primary key (guild_id, clan_tag, user_id, role_id)
+                )
+                """
+            )
+            await connection.execute(
+                """
+                delete from autorole_observations
+                where observed_at < now() - interval '3 days'
+                """
+            )
 
     def _require_pool(self) -> asyncpg.Pool:
         if self.pool is None:
@@ -180,6 +240,7 @@ class Database:
                 "verified_players": 0,
                 "announcement_channels": 0,
                 "war_snapshots": 0,
+                "autorole_configs": 0,
             }
 
         async with self.pool.acquire() as connection:
@@ -191,10 +252,221 @@ class Database:
                     (select count(*) from linked_players) as player_links,
                     (select count(*) from linked_players where verified) as verified_players,
                     (select count(*) from announcement_channels where active) as announcement_channels,
-                    (select count(*) from clan_war_snapshots) as war_snapshots
+                    (select count(*) from clan_war_snapshots) as war_snapshots,
+                    (select count(*) from autorole_configs where active) as autorole_configs
                 """
             )
         return dict(row) if row is not None else {}
+
+    async def upsert_autorole_config(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        clan_name: str,
+        general_role_id: int | str | None,
+        leader_role_id: int | str | None,
+        co_leader_role_id: int | str | None,
+        elder_role_id: int | str | None,
+        member_role_id: int | str | None,
+        grace_enabled: bool,
+    ) -> dict[str, Any]:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            insert into autorole_configs
+                (
+                    guild_id, clan_tag, clan_name, general_role_id, leader_role_id,
+                    co_leader_role_id, elder_role_id, member_role_id, grace_enabled, active
+                )
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+            on conflict (guild_id, clan_tag) do update set
+                clan_name = excluded.clan_name,
+                general_role_id = excluded.general_role_id,
+                leader_role_id = excluded.leader_role_id,
+                co_leader_role_id = excluded.co_leader_role_id,
+                elder_role_id = excluded.elder_role_id,
+                member_role_id = excluded.member_role_id,
+                grace_enabled = excluded.grace_enabled,
+                active = true,
+                updated_at = now()
+            returning *
+            """,
+            str(guild_id),
+            clan_tag,
+            clan_name,
+            None if general_role_id is None else str(general_role_id),
+            None if leader_role_id is None else str(leader_role_id),
+            None if co_leader_role_id is None else str(co_leader_role_id),
+            None if elder_role_id is None else str(elder_role_id),
+            None if member_role_id is None else str(member_role_id),
+            grace_enabled,
+        )
+        return dict(row)
+
+    async def list_autorole_configs(
+        self,
+        *,
+        guild_id: int | str | None = None,
+        clan_tag: str | None = None,
+    ) -> list[dict[str, Any]]:
+        pool = self._require_pool()
+        rows = await pool.fetch(
+            """
+            select *
+            from autorole_configs
+            where active
+                and ($1::text is null or guild_id = $1)
+                and ($2::text is null or clan_tag = $2)
+            order by guild_id, clan_name, clan_tag
+            """,
+            None if guild_id is None else str(guild_id),
+            clan_tag,
+        )
+        return [dict(row) for row in rows]
+
+    async def remove_autorole_config(self, *, guild_id: int | str, clan_tag: str) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            update autorole_configs
+            set active = false, updated_at = now()
+            where guild_id = $1 and clan_tag = $2 and active
+            returning *
+            """,
+            str(guild_id),
+            clan_tag,
+        )
+        return dict(row) if row is not None else None
+
+    async def list_autorole_subjects(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        retention_days: int,
+    ) -> list[dict[str, Any]]:
+        pool = self._require_pool()
+        rows = await pool.fetch(
+            """
+            select player_tag, player_name, user_id
+            from linked_players
+            union
+            select distinct player_tag, player_name, user_id
+            from autorole_observations
+            where guild_id = $1
+                and clan_tag = $2
+                and observed_at >= now() - ($3::int * interval '1 day')
+            order by user_id, player_tag
+            """,
+            str(guild_id),
+            clan_tag,
+            retention_days,
+        )
+        return [dict(row) for row in rows]
+
+    async def insert_autorole_observation(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        player_tag: str,
+        user_id: int | str,
+        player_name: str,
+        clan_role: str,
+        rank_weight: int,
+    ) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            insert into autorole_observations
+                (guild_id, clan_tag, player_tag, user_id, player_name, clan_role, rank_weight)
+            values ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            str(guild_id),
+            clan_tag,
+            player_tag,
+            str(user_id),
+            player_name,
+            clan_role,
+            rank_weight,
+        )
+
+    async def get_autorole_effective_roles(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        retention_days: int,
+    ) -> list[dict[str, Any]]:
+        pool = self._require_pool()
+        rows = await pool.fetch(
+            """
+            select distinct on (player_tag)
+                player_tag,
+                user_id,
+                player_name,
+                clan_role,
+                rank_weight,
+                observed_at
+            from autorole_observations
+            where guild_id = $1
+                and clan_tag = $2
+                and observed_at >= now() - ($3::int * interval '1 day')
+            order by player_tag, rank_weight desc, observed_at desc
+            """,
+            str(guild_id),
+            clan_tag,
+            retention_days,
+        )
+        return [dict(row) for row in rows]
+
+    async def mark_autorole_assignment(
+        self,
+        *,
+        guild_id: int | str,
+        clan_tag: str,
+        user_id: int | str,
+        role_id: int | str,
+        desired: bool,
+    ) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            insert into autorole_assignments (guild_id, clan_tag, user_id, role_id, desired)
+            values ($1, $2, $3, $4, $5)
+            on conflict (guild_id, clan_tag, user_id, role_id) do update set
+                desired = excluded.desired,
+                last_applied_at = now()
+            """,
+            str(guild_id),
+            clan_tag,
+            str(user_id),
+            str(role_id),
+            desired,
+        )
+
+    async def update_autorole_synced_at(self, *, guild_id: int | str, clan_tag: str) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            update autorole_configs
+            set last_synced_at = now(), updated_at = now()
+            where guild_id = $1 and clan_tag = $2
+            """,
+            str(guild_id),
+            clan_tag,
+        )
+
+    async def cleanup_autorole_observations(self, *, retention_days: int) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            delete from autorole_observations
+            where observed_at < now() - ($1::int * interval '1 day')
+            """,
+            retention_days,
+        )
 
     async def upsert_announcement_channel(
         self,

@@ -21,7 +21,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `discord.py` bot runtime.
 - A `/help` slash command.
 - A `/settings` slash command and matching `/settings` HTTP route.
-- `/setup`, `/link`, `/profile`, `/player`, `/clan`, and `/fwa` commands for Discord-first clan/player linking, lookup, and active-war FWA instructions.
+- `/setup`, `/link`, `/profile`, `/player`, `/clan`, `/fwa`, and `/autorole` commands for Discord-first clan/player linking, lookup, active-war FWA instructions, and linked-account role sync.
 - Proactive war monitoring for linked clans, with `/setup announcements` choosing where the bot posts war/FWA updates.
 - A `/clanreport` slash command for detailed Clash of Clans clan, war, and member reporting, with an optional comparison tag and war focus selector.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
@@ -56,6 +56,8 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `AUTOMATIC_EXTERNAL_LOOKUP_TAG_COOLDOWN_SECONDS` | Optional | Your preference | Same-clan cooldown for background FWA/points checks. Defaults to `900`. |
 | `EXTERNAL_LOOKUP_USER_BURST_PER_MINUTE` | Optional | Your preference | Per-user manual FWA/points burst limit. Defaults to `3`. |
 | `EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE` | Optional | Your preference | Per-server manual FWA/points burst limit. Defaults to `12`. |
+| `AUTOROLE_SYNC_INTERVAL_SECONDS` | Optional | Your preference | How often linked-player autoroles are synced in the background. Defaults to `1800`. |
+| `AUTOROLE_RETENTION_DAYS` | Optional | Your preference | Highest observed clan rank retention window for autorole grace. Defaults to `3`. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
 
@@ -104,7 +106,7 @@ You said you can manage these, but make sure the following are done:
 1. Invite the bot with the `applications.commands` scope so slash commands can appear.
 2. Invite the bot with the `bot` scope if you need normal bot presence and future gateway features.
 3. Give it enough permissions for future features. The current `/help` command does not require special channel permissions beyond being usable in the server.
-4. Enable only the privileged intents you actually need. This scaffold currently uses only default, non-privileged intents.
+4. For `/autorole`, give the bot Manage Roles and keep its top role above the roles it manages. Server Members Intent is helpful for member caching, but the bot does not require it to start.
 5. If using `DISCORD_GUILD_ID`, copy the server ID from the same server where you invited the bot.
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
 7. If `/clanreport` says Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
@@ -116,6 +118,10 @@ You said you can manage these, but make sure the following are done:
 The bot polls linked server clans in the background once `DATABASE_URL` and Clash API credentials are configured. The official Clash of Clans API is the source of truth for active wars and war start times. FWA Stats and `points.fwafarm.com` are only queried during the configured early-war window after CoC confirms the match, so normal background checks do not continuously hit community endpoints.
 
 Use `/setup announcements` to set the channel for proactive posts. The monitor announces newly detected active wars, posts copy-ready FWA instructions when FWA Stats plus points data are available inside the lookup window, and records war snapshots for later command use. `/fwa` reuses the stored snapshot for the current war before attempting a guarded live refresh. Manual refreshes allow short human bursts but apply same-clan, per-user, and per-server limits to protect community endpoints.
+
+## Autorole
+
+Use `/autorole set` per clan to map Discord roles for any clan member plus leader, co-leader, elder, and member ranks. Linked player accounts are checked separately, so one Discord user can receive roles from multiple linked accounts. When grace is enabled for a clan, the bot keeps the highest observed rank from the retention window before removing or demoting roles; by default that window is 3 days. Use `/autorole sync` to run it immediately, or let the background sync handle it. The bot fetches linked Discord members directly during sync, so the privileged Members Intent is optional rather than startup-critical.
 
 ## Local development
 

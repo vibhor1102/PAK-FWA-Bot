@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .commands import (
+    build_autorole_group,
     build_clan_command,
     build_clan_report_command,
     build_fwa_command,
@@ -60,5 +61,10 @@ def build_feature_specs() -> tuple[FeatureSpec, ...]:
             name="fwa",
             visibility=FeatureVisibility.all,
             command=build_fwa_command(),
+        ),
+        FeatureSpec(
+            name="autorole",
+            visibility=FeatureVisibility.all,
+            command=build_autorole_group(),
         ),
     )

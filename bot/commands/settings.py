@@ -108,6 +108,7 @@ class SettingsDashboardView(discord.ui.View):
                 name="Start here",
                 value=(
                     f"{command_mention(self._bot, '/setup clan')} - Link a server or channel clan default.\n"
+                    f"{command_mention(self._bot, '/autorole set')} - Configure linked-player clan roles.\n"
                     f"{command_mention(self._bot, '/link create')} - Link a player or clan to a Discord user.\n"
                     f"{command_mention(self._bot, '/link verify')} - Verify player ownership with the in-game API token."
                 ),
@@ -129,6 +130,8 @@ class SettingsDashboardView(discord.ui.View):
                 value=(
                     f"{command_mention(self._bot, '/setup list')} - Review server clan links.\n"
                     f"{command_mention(self._bot, '/setup remove')} - Remove a server clan or channel default.\n"
+                    f"{command_mention(self._bot, '/autorole list')} - Review autorole configs.\n"
+                    f"{command_mention(self._bot, '/autorole sync')} - Run autorole sync now.\n"
                     f"{command_mention(self._bot, '/link list')} - Review linked accounts.\n"
                     f"{command_mention(self._bot, '/link delete')} - Remove a user player/clan link."
                 ),

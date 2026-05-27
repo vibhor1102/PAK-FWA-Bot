@@ -13,6 +13,7 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
+from .autorole import run_autorole_loop
 from .command_mentions import build_command_mentions
 from .config import AppConfig
 from .coc_service import CocService
@@ -68,6 +69,7 @@ class PakFwaBot(commands.Bot):
                 )
                 if self.state.database.connected:
                     self._schedule_background_task(run_war_monitor(self), "war monitor")
+                    self._schedule_background_task(run_autorole_loop(self), "autorole sync")
 
     def _schedule_background_task(self, awaitable: Any, label: str) -> None:
         task = asyncio.create_task(awaitable)
