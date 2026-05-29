@@ -181,6 +181,32 @@ class CommandMentionTests(unittest.TestCase):
         self.assertEqual(command_mention(SimpleNamespace(), "/setup clan"), "/setup clan")
 
 
+class ClanAutocompleteTests(unittest.TestCase):
+    def test_clan_choices_match_alias_name_and_tag(self) -> None:
+        from bot.autocomplete import _choices_from_clans
+
+        choices = _choices_from_clans(
+            [
+                {
+                    "clan_name": "PAK Originals",
+                    "clan_tag": "#ABC",
+                    "alias": "pak",
+                    "nickname": "Main",
+                }
+            ],
+            "pak",
+        )
+
+        self.assertEqual(len(choices), 1)
+        self.assertEqual(choices[0].value, "#ABC")
+        self.assertIn("alias pak", choices[0].name)
+
+    def test_csv_autocomplete_preserves_prior_values(self) -> None:
+        from bot.autocomplete import _split_csv_current
+
+        self.assertEqual(_split_csv_current("#AAA, pa"), ("#AAA, ", "pa"))
+
+
 class ClanDashboardTests(unittest.TestCase):
     def test_page_and_sort_helpers_are_stable(self) -> None:
         from bot.clan_dashboard import next_sort, normalize_page

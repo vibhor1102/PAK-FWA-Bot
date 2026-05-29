@@ -11,6 +11,7 @@ import coc
 import discord
 from discord import app_commands
 
+from ..autocomplete import autocomplete_server_clans
 from ..coc_service import CocConfigurationError
 from ..fwa_sources import (
     FwaPointsRecord,
@@ -38,42 +39,8 @@ class FwaEvent:
     classification: FwaClassification = "unknown"
 
 
-async def autocomplete_fwa_clans(
-    interaction: discord.Interaction,
-    current: str,
-) -> list[app_commands.Choice[str]]:
-    if interaction.guild_id is None or not hasattr(interaction.client, "state"):
-        return []
-
-    try:
-        clans = await interaction.client.state.database.list_server_clans(interaction.guild_id)  # type: ignore[attr-defined]
-    except RuntimeError:
-        return []
-
-    query = current.lower().strip()
-    choices: list[app_commands.Choice[str]] = []
-    for clan in clans:
-        labels = [
-            str(clan.get("nickname") or ""),
-            str(clan.get("alias") or ""),
-            str(clan.get("clan_name") or ""),
-            str(clan.get("clan_tag") or ""),
-        ]
-        searchable = " ".join(labels).lower()
-        if query and query not in searchable:
-            continue
-        name_bits = [clan["clan_name"], clan["clan_tag"]]
-        if clan.get("alias"):
-            name_bits.append(f"alias {clan['alias']}")
-        label = " - ".join(str(bit) for bit in name_bits)
-        choices.append(app_commands.Choice(name=label[:100], value=str(clan["clan_tag"])))
-        if len(choices) >= 25:
-            break
-    return choices
-
-
 def build_fwa_command() -> app_commands.Command[Any, ..., None]:
-    @app_commands.autocomplete(clan=autocomplete_fwa_clans)
+    @app_commands.autocomplete(clan=autocomplete_server_clans)
     @app_commands.describe(clan="Linked clan, alias, or raw clan tag. Optional when a default exists.")
     async def fwa_callback(interaction: discord.Interaction, clan: str | None = None) -> None:
         if interaction.client is None or not hasattr(interaction.client, "state"):

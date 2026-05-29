@@ -4,6 +4,7 @@ import coc
 import discord
 from discord import app_commands
 
+from ..autocomplete import autocomplete_server_clans
 from ..coc_service import CocConfigurationError
 from ..resolver import clash_profile_url, normalize_tag
 
@@ -16,6 +17,7 @@ def build_link_group() -> app_commands.Group:
     group = app_commands.Group(name="link", description="Link Clash players and clans to Discord users.")
 
     @group.command(name="create", description="Link a player or clan to a Discord user.")
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(player_tag="Player tag to link.")
     @app_commands.describe(clan_tag="Clan tag to link as the user's default clan.")
     @app_commands.describe(user="User to link on behalf of; managers only for other users.")
@@ -146,6 +148,7 @@ def build_link_group() -> app_commands.Group:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @group.command(name="delete", description="Remove a linked player or clan from your Discord identity.")
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(player_tag="Player tag to unlink.")
     @app_commands.describe(clan_tag="Clan tag to unlink from your profile.")
     async def link_delete(

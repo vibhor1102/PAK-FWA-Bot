@@ -4,6 +4,7 @@ import coc
 import discord
 from discord import app_commands
 
+from ..autocomplete import autocomplete_csv_server_clans, autocomplete_server_clans
 from ..clan_dashboard import PAGE_LABELS, ensure_dashboard_message, normalize_page
 from ..coc_service import CocConfigurationError
 from ..resolver import clash_profile_url, normalize_tag
@@ -65,6 +66,7 @@ def build_setup_group() -> app_commands.Group:
         )
 
     @group.command(name="user-clan", description="Set your linked clan, or set one for another user.")
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(clan_tag="Clan tag to link as the user's clan.")
     @app_commands.describe(user="User to link on behalf of; managers only for other users.")
     async def setup_user_clan(
@@ -102,6 +104,7 @@ def build_setup_group() -> app_commands.Group:
 
     @group.command(name="clan", description="Link a Clash clan to this server or channel.")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(clan_tag="The clan tag to link, with or without #.")
     @app_commands.describe(channel="Optional channel where this clan should be the default.")
     @app_commands.describe(alias="Optional short name users can type instead of the tag.")
@@ -197,6 +200,7 @@ def build_setup_group() -> app_commands.Group:
 
     @group.command(name="remove", description="Remove a linked server clan or channel default.")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(clan_tag="Clan tag to unlink from the server.")
     @app_commands.describe(channel="Channel default to clear instead of removing the clan.")
     async def setup_remove(
@@ -275,6 +279,7 @@ def build_setup_group() -> app_commands.Group:
 
     @group.command(name="dashboard", description="Create or update a persistent clan dashboard message.")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.autocomplete(default_clan=autocomplete_server_clans, additional_clans=autocomplete_csv_server_clans)
     @app_commands.describe(channel="Channel where the persistent dashboard message should live.")
     @app_commands.describe(default_clan="Default clan tag or linked alias.")
     @app_commands.describe(additional_clans="Optional comma-separated clan tags or linked aliases.")

@@ -6,11 +6,13 @@ import coc
 import discord
 from discord import app_commands
 
+from ..autocomplete import autocomplete_server_clans
 from ..coc_service import CocConfigurationError
 from ..resolver import LinkResolutionError, LinkResolver, clash_profile_url
 
 
 def build_clan_command() -> app_commands.Command[Any, ..., None]:
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(clan_tag="Clan tag or server alias. Optional when a linked default exists.")
     @app_commands.describe(user="Resolve this user's linked clan instead of yours.")
     async def clan_callback(

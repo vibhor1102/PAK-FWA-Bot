@@ -4,6 +4,7 @@ import coc
 import discord
 from discord import app_commands
 
+from ..autocomplete import autocomplete_autorole_clans, autocomplete_server_clans
 from ..autorole import sync_autoroles
 from ..coc_service import CocConfigurationError
 from ..resolver import normalize_tag
@@ -14,6 +15,7 @@ def build_autorole_group() -> app_commands.Group:
 
     @group.command(name="set", description="Set clan roles for linked player autorole sync.")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.autocomplete(clan_tag=autocomplete_server_clans)
     @app_commands.describe(clan_tag="Clan tag this autorole config belongs to.")
     @app_commands.describe(general_role="Role given to any linked member seen in this clan.")
     @app_commands.describe(leader_role="Role for linked leader accounts.")
@@ -120,6 +122,7 @@ def build_autorole_group() -> app_commands.Group:
 
     @group.command(name="sync", description="Run autorole sync now.")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.autocomplete(clan_tag=autocomplete_autorole_clans)
     @app_commands.describe(clan_tag="Optional clan tag to sync; defaults to all autorole configs in this server.")
     async def autorole_sync(interaction: discord.Interaction, clan_tag: str | None = None) -> None:
         if interaction.guild_id is None:
@@ -153,6 +156,7 @@ def build_autorole_group() -> app_commands.Group:
 
     @group.command(name="remove", description="Disable autorole config for a clan.")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.autocomplete(clan_tag=autocomplete_autorole_clans)
     async def autorole_remove(interaction: discord.Interaction, clan_tag: str) -> None:
         if interaction.guild_id is None:
             await interaction.response.send_message("Autorole setup can only be used inside a server.", ephemeral=True)

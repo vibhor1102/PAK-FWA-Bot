@@ -114,15 +114,17 @@ class SettingsHubView(discord.ui.View):
         if interaction.user.id != self.owner.id:
             await interaction.response.send_message("Open your own settings panel to use these controls.", ephemeral=True)
             return
+        await interaction.response.defer()
         data = await load_settings_data(self.bot, interaction)
         pages = available_pages(interaction)
         new_view = SettingsHubView(self.bot, interaction.user, data, pages, page=page)
-        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        await interaction.edit_original_response(embed=new_view.build_embed(), view=new_view)
 
     async def refresh(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.owner.id:
             await interaction.response.send_message("Open your own settings panel to refresh it.", ephemeral=True)
             return
+        await interaction.response.defer()
         data = await load_settings_data(self.bot, interaction)
         pages = available_pages(interaction)
         new_view = SettingsHubView(
@@ -134,7 +136,7 @@ class SettingsHubView(discord.ui.View):
             selected_clan_index=self.selected_clan_index,
             selected_autorole_index=self.selected_autorole_index,
         )
-        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        await interaction.edit_original_response(embed=new_view.build_embed(), view=new_view)
 
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(
