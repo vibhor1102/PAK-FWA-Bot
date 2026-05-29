@@ -11,6 +11,8 @@ import asyncpg
 @dataclass(slots=True)
 class Database:
     dsn: str | None
+    pool_min_size: int = 0
+    pool_max_size: int = 3
     pool: asyncpg.Pool | None = field(default=None, init=False, repr=False)
 
     @property
@@ -26,7 +28,11 @@ class Database:
             return
 
         _validate_dsn(self.dsn)
-        self.pool = await asyncpg.create_pool(self.dsn)
+        self.pool = await asyncpg.create_pool(
+            self.dsn,
+            min_size=self.pool_min_size,
+            max_size=self.pool_max_size,
+        )
         await self.ensure_schema()
 
     async def close(self) -> None:

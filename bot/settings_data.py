@@ -55,6 +55,7 @@ def build_settings_snapshot(
             "items": [
                 ("Configured", yes_no(state.database.configured)),
                 ("Connected", yes_no(state.database.connected)),
+                ("Pool size", f"{config.database_pool_min_size}-{config.database_pool_max_size}"),
                 ("Connection string", mask_value(state.database.dsn)),
             ],
         },

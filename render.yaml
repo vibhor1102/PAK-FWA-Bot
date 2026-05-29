@@ -17,4 +17,8 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: DATABASE_POOL_MIN_SIZE
+        value: 0
+      - key: DATABASE_POOL_MAX_SIZE
+        value: 3
     autoDeploy: true

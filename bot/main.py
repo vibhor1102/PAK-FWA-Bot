@@ -153,7 +153,11 @@ async def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = AppConfig.from_environment()
-    database = Database(config.database_url)
+    database = Database(
+        config.database_url,
+        pool_min_size=config.database_pool_min_size,
+        pool_max_size=config.database_pool_max_size,
+    )
     await database.connect()
     coc_service = CocService(config)
     fwa_service = FwaFarmService()

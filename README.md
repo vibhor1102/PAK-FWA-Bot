@@ -40,6 +40,8 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `DISCORD_TOKEN` | Yes | Discord Developer Portal > your application > Bot > Token | Keep this secret. Never commit it to GitHub. |
 | `DISCORD_GUILD_ID` | No | Discord client with Developer Mode enabled > right-click your server > Copy Server ID | Recommended while developing because guild commands update quickly. Remove later for global commands. |
 | `DATABASE_URL` | No now, yes later | Supabase or local PostgreSQL | The app is ready for Postgres-backed features even before they are all added. |
+| `DATABASE_POOL_MIN_SIZE` | Optional | Your database plan limits | Minimum open Postgres connections. Defaults to `0` so deploy startup does not eagerly consume hosted pooler sessions. |
+| `DATABASE_POOL_MAX_SIZE` | Optional | Your database plan limits | Maximum open Postgres connections. Defaults to `3`, which is safer for small hosted poolers. |
 | `PORT` | No | Render sets this automatically | Only set manually for local development if needed. |
 | `COC_EMAIL` | Optional | Supercell developer portal email | Used by `coc.py` to create and refresh API keys automatically. |
 | `COC_PASSWORD` | Optional | Supercell developer portal password | Used with `COC_EMAIL` for automatic key management. |
@@ -84,8 +86,9 @@ After deploy, your service URL should return a simple response at `/`, JSON at `
 4. Add `DISCORD_TOKEN` with your bot token as the value.
 5. Optional but recommended while testing: add `DISCORD_GUILD_ID` with the ID of the server where you invited the bot.
 6. Add `DATABASE_URL` with your Supabase production pooler connection string.
-7. Add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account for Clash API-backed commands. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys.
-8. Save changes and redeploy/restart the service.
+7. Keep `DATABASE_POOL_MIN_SIZE=0` and `DATABASE_POOL_MAX_SIZE=3` unless your database plan supports more concurrent sessions.
+8. Add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account for Clash API-backed commands. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys.
+9. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
 
@@ -179,6 +182,7 @@ When `DISCORD_GUILD_ID` is set, the bot registers commands only to that server a
 - A missing `DISCORD_TOKEN` will stop the app on startup; add it in Render Environment settings.
 - An invalid `DISCORD_GUILD_ID` must be corrected or removed; it should contain only the numeric Discord server ID.
 - If Clash API-backed commands fail with a configuration error, confirm the COC environment variables are set in the same environment that starts the bot.
+- If Render logs show `EMAXCONNSESSION` or `max clients reached`, keep `DATABASE_POOL_MIN_SIZE=0` and lower `DATABASE_POOL_MAX_SIZE` to fit your hosted Postgres session limit.
 - If the CC lookup shows `blocked_by_cloudflare`, the points scrape still works, but that source is refusing automated access from the current network.
 - If Render says the port is unavailable, make sure the start command is `python -m bot`; the app reads Render's `PORT` environment variable automatically.
 - If UptimeRobot reports failures, check both `/` and `/health` on the Render service URL and inspect Render logs.

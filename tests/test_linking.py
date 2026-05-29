@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from bot.resolver import LinkResolutionError, LinkResolver, normalize_tag
 
@@ -120,6 +120,38 @@ class DatabaseHelperTests(unittest.IsolatedAsyncioTestCase):
         pool.execute.assert_awaited_once()
         _, user_id, username, display_name = pool.execute.await_args.args
         self.assertEqual((user_id, username, display_name), ("123", "v", "Vibhor"))
+
+
+class ConfigTests(unittest.TestCase):
+    def test_database_pool_defaults_are_small_and_lazy(self) -> None:
+        from bot.config import AppConfig
+
+        with (
+            patch.dict("os.environ", {"DISCORD_TOKEN": "token"}, clear=True),
+            patch("bot.config.DOTENV_PATH", SimpleNamespace(is_file=lambda: False)),
+        ):
+            config = AppConfig.from_environment()
+
+        self.assertEqual(config.database_pool_min_size, 0)
+        self.assertEqual(config.database_pool_max_size, 3)
+
+    def test_database_pool_min_cannot_exceed_max(self) -> None:
+        from bot.config import AppConfig
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "DISCORD_TOKEN": "token",
+                    "DATABASE_POOL_MIN_SIZE": "4",
+                    "DATABASE_POOL_MAX_SIZE": "3",
+                },
+                clear=True,
+            ),
+            patch("bot.config.DOTENV_PATH", SimpleNamespace(is_file=lambda: False)),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "DATABASE_POOL_MIN_SIZE"):
+                AppConfig.from_environment()
 
 
 class CommandMentionTests(unittest.TestCase):

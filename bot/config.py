@@ -26,6 +26,8 @@ class AppConfig:
     discord_guild_id: int | None
     port: int
     database_url: str | None
+    database_pool_min_size: int
+    database_pool_max_size: int
     coc_email: str | None
     coc_password: str | None
     coc_tokens: tuple[str, ...]
@@ -53,6 +55,10 @@ class AppConfig:
         discord_guild_id = _read_optional_int("DISCORD_GUILD_ID")
         port = _read_int("PORT", DEFAULT_PORT)
         database_url = os.getenv("DATABASE_URL") or None
+        database_pool_min_size = _read_non_negative_int("DATABASE_POOL_MIN_SIZE", 0)
+        database_pool_max_size = _read_positive_int("DATABASE_POOL_MAX_SIZE", 3)
+        if database_pool_min_size > database_pool_max_size:
+            raise RuntimeError("DATABASE_POOL_MIN_SIZE must be less than or equal to DATABASE_POOL_MAX_SIZE")
         coc_email = os.getenv("COC_EMAIL") or None
         coc_password = os.getenv("COC_PASSWORD") or None
         coc_tokens = _read_csv("COC_TOKENS")
@@ -90,6 +96,8 @@ class AppConfig:
             discord_guild_id=discord_guild_id,
             port=port,
             database_url=database_url,
+            database_pool_min_size=database_pool_min_size,
+            database_pool_max_size=database_pool_max_size,
             coc_email=coc_email,
             coc_password=coc_password,
             coc_tokens=coc_tokens,
@@ -168,6 +176,13 @@ def _read_positive_int(name: str, default: int) -> int:
     value = _read_int(name, default)
     if value < 1:
         raise RuntimeError(f"{name} must be greater than zero")
+    return value
+
+
+def _read_non_negative_int(name: str, default: int) -> int:
+    value = _read_int(name, default)
+    if value < 0:
+        raise RuntimeError(f"{name} must be zero or greater")
     return value
 
 
