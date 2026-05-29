@@ -56,7 +56,8 @@ def build_help_embed(bot: Any) -> discord.Embed:
         name="FWA",
         value=(
             f"{command_mention(bot, '/fwa')} - Post concise active-war instructions.\n"
-            f"{command_mention(bot, '/setup announcements')} - Set proactive war feed channel."
+            f"{command_mention(bot, '/setup announcements')} - Set proactive war feed channel.\n"
+            f"{command_mention(bot, '/setup dashboard')} - Keep a persistent clan dashboard updated."
         ),
         inline=False,
     )

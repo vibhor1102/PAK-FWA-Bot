@@ -227,6 +227,91 @@ class Database:
             )
             await connection.execute(
                 """
+                create table if not exists clan_dashboards (
+                    id bigserial primary key,
+                    guild_id text not null,
+                    channel_id text not null,
+                    message_id text,
+                    default_clan_tag text not null,
+                    default_page text not null default 'overview',
+                    selected_clan_tags jsonb not null default '[]'::jsonb,
+                    reset_minutes integer not null default 20,
+                    show_public_controls boolean not null default true,
+                    current_clan_tag text,
+                    current_page text,
+                    current_sort text,
+                    active boolean not null default true,
+                    last_interaction_at timestamptz,
+                    last_refreshed_at timestamptz,
+                    created_at timestamptz not null default now(),
+                    updated_at timestamptz not null default now(),
+                    unique (guild_id, channel_id)
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists clan_member_snapshots (
+                    clan_tag text not null,
+                    player_tag text not null,
+                    player_name text not null,
+                    town_hall_level integer,
+                    clan_role text,
+                    trophies integer,
+                    builder_base_trophies integer,
+                    donations integer,
+                    donations_received integer,
+                    war_preference text,
+                    clan_games_value integer,
+                    capital_looted integer,
+                    capital_attacks integer,
+                    active boolean not null default true,
+                    raw jsonb not null default '{}'::jsonb,
+                    updated_at timestamptz not null default now(),
+                    primary key (clan_tag, player_tag)
+                )
+                """
+            )
+            await connection.execute(
+                """
+                alter table clan_member_snapshots
+                add column if not exists active boolean not null default true
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists clan_activity_events (
+                    id bigserial primary key,
+                    clan_tag text not null,
+                    player_tag text not null,
+                    player_name text not null,
+                    signal_type text not null,
+                    details jsonb not null default '{}'::jsonb,
+                    observed_at timestamptz not null default now()
+                )
+                """
+            )
+            await connection.execute(
+                """
+                create index if not exists clan_activity_events_lookup_idx
+                on clan_activity_events (clan_tag, player_tag, observed_at desc)
+                """
+            )
+            await connection.execute(
+                """
+                create table if not exists clan_activity_scores (
+                    clan_tag text not null,
+                    player_tag text not null,
+                    player_name text not null,
+                    activity_date date not null default current_date,
+                    score integer not null default 0,
+                    last_seen_at timestamptz not null default now(),
+                    primary key (clan_tag, player_tag, activity_date)
+                )
+                """
+            )
+            await connection.execute(
+                """
                 delete from autorole_observations
                 where observed_at < now() - interval '3 days'
                 """
@@ -259,10 +344,467 @@ class Database:
                     (select count(*) from linked_players where verified) as verified_players,
                     (select count(*) from announcement_channels where active) as announcement_channels,
                     (select count(*) from clan_war_snapshots) as war_snapshots,
-                    (select count(*) from autorole_configs where active) as autorole_configs
+                    (select count(*) from autorole_configs where active) as autorole_configs,
+                    (select count(*) from clan_dashboards where active) as clan_dashboards,
+                    (select count(*) from clan_activity_events) as clan_activity_events
                 """
             )
         return dict(row) if row is not None else {}
+
+    async def upsert_clan_dashboard(
+        self,
+        *,
+        guild_id: int | str,
+        channel_id: int | str,
+        message_id: int | str | None,
+        default_clan_tag: str,
+        default_page: str,
+        selected_clan_tags: list[str],
+        reset_minutes: int,
+        show_public_controls: bool,
+    ) -> dict[str, Any]:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            insert into clan_dashboards
+                (
+                    guild_id, channel_id, message_id, default_clan_tag, default_page,
+                    selected_clan_tags, reset_minutes, show_public_controls,
+                    current_clan_tag, current_page, current_sort, active
+                )
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $4, $5, null, true)
+            on conflict (guild_id, channel_id) do update set
+                message_id = coalesce(excluded.message_id, clan_dashboards.message_id),
+                default_clan_tag = excluded.default_clan_tag,
+                default_page = excluded.default_page,
+                selected_clan_tags = excluded.selected_clan_tags,
+                reset_minutes = excluded.reset_minutes,
+                show_public_controls = excluded.show_public_controls,
+                current_clan_tag = excluded.current_clan_tag,
+                current_page = excluded.current_page,
+                current_sort = null,
+                active = true,
+                updated_at = now()
+            returning *
+            """,
+            str(guild_id),
+            str(channel_id),
+            None if message_id is None else str(message_id),
+            default_clan_tag,
+            default_page,
+            json.dumps(selected_clan_tags),
+            reset_minutes,
+            show_public_controls,
+        )
+        return _decode_dashboard_row(row)
+
+    async def update_clan_dashboard_message_id(
+        self,
+        *,
+        dashboard_id: int | str,
+        message_id: int | str,
+    ) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            update clan_dashboards
+            set message_id = $2, updated_at = now()
+            where id = $1 and active
+            returning *
+            """,
+            int(dashboard_id),
+            str(message_id),
+        )
+        return _decode_dashboard_row(row) if row is not None else None
+
+    async def list_clan_dashboards(
+        self,
+        *,
+        guild_id: int | str | None = None,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        if self.pool is None:
+            return []
+
+        rows = await self.pool.fetch(
+            """
+            select *
+            from clan_dashboards
+            where ($1::text is null or guild_id = $1)
+                and ($2::boolean = false or active)
+            order by guild_id, channel_id
+            """,
+            None if guild_id is None else str(guild_id),
+            active_only,
+        )
+        return [_decode_dashboard_row(row) for row in rows]
+
+    async def get_clan_dashboard_by_channel(
+        self,
+        *,
+        guild_id: int | str,
+        channel_id: int | str,
+    ) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            select *
+            from clan_dashboards
+            where guild_id = $1 and channel_id = $2 and active
+            """,
+            str(guild_id),
+            str(channel_id),
+        )
+        return _decode_dashboard_row(row) if row is not None else None
+
+    async def update_clan_dashboard_view_state(
+        self,
+        *,
+        dashboard_id: int | str,
+        current_clan_tag: str,
+        current_page: str,
+        current_sort: str | None,
+        mark_interaction: bool,
+    ) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        row = await pool.fetchrow(
+            """
+            update clan_dashboards
+            set current_clan_tag = $2,
+                current_page = $3,
+                current_sort = $4,
+                last_interaction_at = case when $5 then now() else last_interaction_at end,
+                updated_at = now()
+            where id = $1 and active
+            returning *
+            """,
+            int(dashboard_id),
+            current_clan_tag,
+            current_page,
+            current_sort,
+            mark_interaction,
+        )
+        return _decode_dashboard_row(row) if row is not None else None
+
+    async def mark_clan_dashboard_refreshed(self, *, dashboard_id: int | str) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            update clan_dashboards
+            set last_refreshed_at = now(), updated_at = now()
+            where id = $1 and active
+            """,
+            int(dashboard_id),
+        )
+
+    async def disable_clan_dashboard(
+        self,
+        *,
+        guild_id: int | str,
+        channel_id: int | str | None = None,
+    ) -> dict[str, Any] | None:
+        pool = self._require_pool()
+        if channel_id is None:
+            row = await pool.fetchrow(
+                """
+                update clan_dashboards
+                set active = false, updated_at = now()
+                where guild_id = $1 and active
+                returning *
+                """,
+                str(guild_id),
+            )
+        else:
+            row = await pool.fetchrow(
+                """
+                update clan_dashboards
+                set active = false, updated_at = now()
+                where guild_id = $1 and channel_id = $2 and active
+                returning *
+                """,
+                str(guild_id),
+                str(channel_id),
+            )
+        return _decode_dashboard_row(row) if row is not None else None
+
+    async def list_activity_clans(self) -> list[dict[str, Any]]:
+        if self.pool is None:
+            return []
+
+        rows = await self.pool.fetch(
+            """
+            select distinct clan_tag, clan_name
+            from (
+                select clan_tag, clan_name
+                from linked_server_clans
+                where active
+                union all
+                select jsonb_array_elements_text(selected_clan_tags) as clan_tag, null::text as clan_name
+                from clan_dashboards
+                where active
+            ) clans
+            where clan_tag is not null
+            order by clan_tag
+            """
+        )
+        return [dict(row) for row in rows]
+
+    async def list_player_links_by_tags(self, player_tags: list[str]) -> list[dict[str, Any]]:
+        if not player_tags:
+            return []
+        pool = self._require_pool()
+        rows = await pool.fetch(
+            """
+            select *
+            from linked_players
+            where player_tag = any($1::text[])
+            order by player_name, player_tag
+            """,
+            player_tags,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_latest_activity_by_clan(self, clan_tag: str) -> list[dict[str, Any]]:
+        if self.pool is None:
+            return []
+
+        rows = await self.pool.fetch(
+            """
+            select distinct on (player_tag)
+                player_tag,
+                player_name,
+                last_seen_at,
+                sum(score) over (partition by player_tag) as score
+            from clan_activity_scores
+            where clan_tag = $1
+            order by player_tag, last_seen_at desc
+            """,
+            clan_tag,
+        )
+        return [dict(row) for row in rows]
+
+    async def list_clan_member_snapshots(self, clan_tag: str) -> list[dict[str, Any]]:
+        if self.pool is None:
+            return []
+
+        rows = await self.pool.fetch(
+            """
+            select *
+            from clan_member_snapshots
+            where clan_tag = $1
+            order by player_name, player_tag
+            """,
+            clan_tag,
+        )
+        return [dict(row) for row in rows]
+
+    async def cleanup_clan_activity(self, *, retention_days: int) -> None:
+        pool = self._require_pool()
+        await pool.execute(
+            """
+            delete from clan_activity_events
+            where observed_at < now() - ($1::int * interval '1 day')
+            """,
+            retention_days,
+        )
+        await pool.execute(
+            """
+            delete from clan_activity_scores
+            where activity_date < current_date - $1::int
+            """,
+            retention_days,
+        )
+
+    async def mark_missing_clan_members_left(
+        self,
+        *,
+        clan_tag: str,
+        current_player_tags: list[str],
+    ) -> list[dict[str, Any]]:
+        pool = self._require_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                rows = await connection.fetch(
+                    """
+                    update clan_member_snapshots
+                    set active = false, updated_at = now()
+                    where clan_tag = $1
+                        and active
+                        and not (player_tag = any($2::text[]))
+                    returning player_tag, player_name
+                    """,
+                    clan_tag,
+                    current_player_tags,
+                )
+                events = []
+                for row in rows:
+                    event = {
+                        "clan_tag": clan_tag,
+                        "player_tag": row["player_tag"],
+                        "player_name": row["player_name"],
+                        "signal_type": "left_clan",
+                        "details": {"active": False},
+                    }
+                    events.append(event)
+                    await connection.execute(
+                        """
+                        insert into clan_activity_events
+                            (clan_tag, player_tag, player_name, signal_type, details)
+                        values ($1, $2, $3, $4, $5::jsonb)
+                        """,
+                        event["clan_tag"],
+                        event["player_tag"],
+                        event["player_name"],
+                        event["signal_type"],
+                        json.dumps(event["details"]),
+                    )
+                    await connection.execute(
+                        """
+                        insert into clan_activity_scores
+                            (clan_tag, player_tag, player_name, activity_date, score, last_seen_at)
+                        values ($1, $2, $3, current_date, 1, now())
+                        on conflict (clan_tag, player_tag, activity_date) do update set
+                            player_name = excluded.player_name,
+                            score = clan_activity_scores.score + 1,
+                            last_seen_at = now()
+                        """,
+                        event["clan_tag"],
+                        event["player_tag"],
+                        event["player_name"],
+                    )
+        return events
+
+    async def record_clan_member_snapshot(
+        self,
+        *,
+        clan_tag: str,
+        member: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        pool = self._require_pool()
+        keys = (
+            "town_hall_level",
+            "clan_role",
+            "trophies",
+            "builder_base_trophies",
+            "donations",
+            "donations_received",
+            "war_preference",
+            "clan_games_value",
+            "capital_looted",
+            "capital_attacks",
+        )
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                existing = await connection.fetchrow(
+                    """
+                    select *
+                    from clan_member_snapshots
+                    where clan_tag = $1 and player_tag = $2
+                    """,
+                    clan_tag,
+                    member["player_tag"],
+                )
+                events: list[dict[str, Any]] = []
+                if existing is not None:
+                    old = dict(existing)
+                    if old.get("active") is False:
+                        events.append(
+                            {
+                                "clan_tag": clan_tag,
+                                "player_tag": member["player_tag"],
+                                "player_name": member["player_name"],
+                                "signal_type": "joined_clan",
+                                "details": {"active": True},
+                            }
+                        )
+                    for key in keys:
+                        before = old.get(key)
+                        after = member.get(key)
+                        if before == after or after is None:
+                            continue
+                        if key in {"donations", "donations_received", "trophies", "builder_base_trophies", "clan_games_value", "capital_looted", "capital_attacks"}:
+                            try:
+                                if int(after) <= int(before or 0):
+                                    continue
+                            except (TypeError, ValueError):
+                                continue
+                        events.append(
+                            {
+                                "clan_tag": clan_tag,
+                                "player_tag": member["player_tag"],
+                                "player_name": member["player_name"],
+                                "signal_type": key,
+                                "details": {"before": before, "after": after},
+                            }
+                        )
+                await connection.execute(
+                    """
+                    insert into clan_member_snapshots
+                        (
+                            clan_tag, player_tag, player_name, town_hall_level, clan_role,
+                            trophies, builder_base_trophies, donations, donations_received,
+                            war_preference, clan_games_value, capital_looted, capital_attacks, active, raw
+                        )
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true, $14::jsonb)
+                    on conflict (clan_tag, player_tag) do update set
+                        player_name = excluded.player_name,
+                        town_hall_level = excluded.town_hall_level,
+                        clan_role = excluded.clan_role,
+                        trophies = excluded.trophies,
+                        builder_base_trophies = excluded.builder_base_trophies,
+                        donations = excluded.donations,
+                        donations_received = excluded.donations_received,
+                        war_preference = excluded.war_preference,
+                        clan_games_value = excluded.clan_games_value,
+                        capital_looted = excluded.capital_looted,
+                        capital_attacks = excluded.capital_attacks,
+                        active = true,
+                        raw = excluded.raw,
+                        updated_at = now()
+                    """,
+                    clan_tag,
+                    member["player_tag"],
+                    member["player_name"],
+                    member.get("town_hall_level"),
+                    member.get("clan_role"),
+                    member.get("trophies"),
+                    member.get("builder_base_trophies"),
+                    member.get("donations"),
+                    member.get("donations_received"),
+                    member.get("war_preference"),
+                    member.get("clan_games_value"),
+                    member.get("capital_looted"),
+                    member.get("capital_attacks"),
+                    json.dumps(member.get("raw") or {}),
+                )
+                for event in events:
+                    await connection.execute(
+                        """
+                        insert into clan_activity_events
+                            (clan_tag, player_tag, player_name, signal_type, details)
+                        values ($1, $2, $3, $4, $5::jsonb)
+                        """,
+                        event["clan_tag"],
+                        event["player_tag"],
+                        event["player_name"],
+                        event["signal_type"],
+                        json.dumps(event["details"]),
+                    )
+                    await connection.execute(
+                        """
+                        insert into clan_activity_scores
+                            (clan_tag, player_tag, player_name, activity_date, score, last_seen_at)
+                        values ($1, $2, $3, current_date, 1, now())
+                        on conflict (clan_tag, player_tag, activity_date) do update set
+                            player_name = excluded.player_name,
+                            score = clan_activity_scores.score + 1,
+                            last_seen_at = now()
+                        """,
+                        event["clan_tag"],
+                        event["player_tag"],
+                        event["player_name"],
+                    )
+        return events
 
     async def upsert_autorole_config(
         self,
@@ -1013,3 +1555,16 @@ def _validate_dsn(dsn: str) -> None:
             "DATABASE_URL contains an unencoded @ in the username or password. "
             "Percent-encode it as %40 before deploying."
         )
+
+
+def _decode_dashboard_row(row: Any) -> dict[str, Any]:
+    data = dict(row)
+    selected = data.get("selected_clan_tags")
+    if isinstance(selected, str):
+        try:
+            data["selected_clan_tags"] = json.loads(selected)
+        except json.JSONDecodeError:
+            data["selected_clan_tags"] = []
+    elif selected is None:
+        data["selected_clan_tags"] = []
+    return data

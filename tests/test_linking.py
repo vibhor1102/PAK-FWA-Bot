@@ -134,6 +134,10 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.database_pool_min_size, 0)
         self.assertEqual(config.database_pool_max_size, 3)
+        self.assertEqual(config.clan_dashboard_refresh_seconds, 300)
+        self.assertEqual(config.clan_dashboard_interaction_reset_minutes, 20)
+        self.assertEqual(config.clan_activity_retention_days, 45)
+        self.assertEqual(config.clan_activity_poll_seconds, 900)
 
     def test_database_pool_min_cannot_exceed_max(self) -> None:
         from bot.config import AppConfig
@@ -175,6 +179,83 @@ class CommandMentionTests(unittest.TestCase):
         from bot.command_mentions import command_mention
 
         self.assertEqual(command_mention(SimpleNamespace(), "/setup clan"), "/setup clan")
+
+
+class ClanDashboardTests(unittest.TestCase):
+    def test_page_and_sort_helpers_are_stable(self) -> None:
+        from bot.clan_dashboard import next_sort, normalize_page
+
+        self.assertEqual(normalize_page("Clan-Games"), "clan_games")
+        self.assertEqual(normalize_page("bad"), "overview")
+        self.assertEqual(next_sort("donations", None), "donated")
+        self.assertEqual(next_sort("donations", "donated"), "received")
+        self.assertIsNone(next_sort("overview", None))
+
+    def test_code_block_trims_to_embed_safe_size(self) -> None:
+        from bot.clan_dashboard import code_block
+
+        text = code_block(["x" * 5000])
+
+        self.assertLess(len(text), 4096)
+        self.assertIn("trimmed", text)
+
+    def test_member_rows_normalize_columns(self) -> None:
+        from bot.clan_dashboard import member_rows
+
+        clan = SimpleNamespace(
+            members=[
+                SimpleNamespace(
+                    tag="#AAA",
+                    name="Leader",
+                    town_hall_level=16,
+                    role="coLeader",
+                    trophies=5000,
+                    donations=10,
+                    donations_received=5,
+                    war_preference="in",
+                )
+            ]
+        )
+
+        rows = member_rows(clan)
+
+        self.assertEqual(rows[0]["role"], "Co")
+        self.assertEqual(rows[0]["ratio"], 2)
+        self.assertEqual(rows[0]["war"], "in")
+
+
+class DashboardDatabaseTests(unittest.IsolatedAsyncioTestCase):
+    async def test_upsert_dashboard_encodes_selected_tags(self) -> None:
+        from bot.database import Database
+
+        pool = SimpleNamespace(
+            fetchrow=AsyncMock(
+                return_value={
+                    "id": 1,
+                    "guild_id": "1",
+                    "channel_id": "2",
+                    "default_clan_tag": "#AAA",
+                    "default_page": "overview",
+                    "selected_clan_tags": '["#AAA", "#BBB"]',
+                }
+            )
+        )
+        database = Database("postgres://user:pass@example/db")
+        database.pool = pool
+
+        row = await database.upsert_clan_dashboard(
+            guild_id=1,
+            channel_id=2,
+            message_id=None,
+            default_clan_tag="#AAA",
+            default_page="overview",
+            selected_clan_tags=["#AAA", "#BBB"],
+            reset_minutes=20,
+            show_public_controls=True,
+        )
+
+        self.assertEqual(row["selected_clan_tags"], ["#AAA", "#BBB"])
+        self.assertIn('["#AAA", "#BBB"]', pool.fetchrow.await_args.args)
 
 
 class FwaCommandTests(unittest.TestCase):

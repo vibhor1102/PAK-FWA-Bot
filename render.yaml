@@ -21,4 +21,12 @@ services:
         value: 0
       - key: DATABASE_POOL_MAX_SIZE
         value: 3
+      - key: CLAN_DASHBOARD_REFRESH_SECONDS
+        value: 300
+      - key: CLAN_DASHBOARD_INTERACTION_RESET_MINUTES
+        value: 20
+      - key: CLAN_ACTIVITY_RETENTION_DAYS
+        value: 45
+      - key: CLAN_ACTIVITY_POLL_SECONDS
+        value: 900
     autoDeploy: true

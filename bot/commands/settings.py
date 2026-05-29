@@ -16,6 +16,7 @@ class SettingsHubData:
     players: list[dict[str, Any]]
     server_clans: list[dict[str, Any]]
     announcements: dict[str, Any] | None
+    dashboards: list[dict[str, Any]]
     autoroles: list[dict[str, Any]]
     runtime: dict[str, object]
 
@@ -222,9 +223,22 @@ class SettingsHubView(discord.ui.View):
         else:
             summary = "No feed channel set"
         embed.add_field(name="War feed", value=summary, inline=False)
+        if self.data.dashboards:
+            lines = [
+                f"<#{dashboard['channel_id']}> - {dashboard['default_clan_tag']} / {dashboard['default_page']}"
+                for dashboard in self.data.dashboards[:8]
+            ]
+            dashboard_summary = "\n".join(lines)
+        else:
+            dashboard_summary = "No persistent clan dashboards set"
+        embed.add_field(name="Clan dashboards", value=dashboard_summary, inline=False)
         embed.add_field(
             name="Manage",
-            value=f"{command_mention(self.bot, '/setup announcements')} - setup proactive war feed channel",
+            value=(
+                f"{command_mention(self.bot, '/setup announcements')} - setup proactive war feed channel\n"
+                f"{command_mention(self.bot, '/setup dashboard')} - setup persistent clan dashboard\n"
+                f"{command_mention(self.bot, '/setup dashboard-remove')} - disable a dashboard"
+            ),
             inline=False,
         )
 
@@ -273,6 +287,7 @@ async def load_settings_data(bot: Any, interaction: discord.Interaction) -> Sett
     players: list[dict[str, Any]] = []
     server_clans: list[dict[str, Any]] = []
     announcements = None
+    dashboards: list[dict[str, Any]] = []
     autoroles: list[dict[str, Any]] = []
     counts = await database.count_linking_rows()
     try:
@@ -282,6 +297,7 @@ async def load_settings_data(bot: Any, interaction: discord.Interaction) -> Sett
             if can_manage_server(interaction):
                 server_clans = await database.list_server_clans(interaction.guild_id)
                 announcements = await database.get_announcement_channel(interaction.guild_id)
+                dashboards = await database.list_clan_dashboards(guild_id=interaction.guild_id)
             if can_manage_roles(interaction):
                 autoroles = await database.list_autorole_configs(guild_id=interaction.guild_id)
     except RuntimeError:
@@ -292,7 +308,7 @@ async def load_settings_data(bot: Any, interaction: discord.Interaction) -> Sett
         latency_ms=None if bot.latency is None else round(bot.latency * 1000),
         linking_counts=counts,
     )
-    return SettingsHubData(profile, players, server_clans, announcements, autoroles, runtime)
+    return SettingsHubData(profile, players, server_clans, announcements, dashboards, autoroles, runtime)
 
 
 def available_pages(interaction: discord.Interaction) -> list[tuple[str, str]]:

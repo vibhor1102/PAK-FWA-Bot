@@ -14,6 +14,7 @@ from aiohttp import web
 from discord.ext import commands
 
 from .autorole import run_autorole_loop
+from .clan_dashboard import run_clan_activity_loop, run_clan_dashboard_loop
 from .command_mentions import build_command_mentions
 from .config import AppConfig
 from .coc_service import CocService
@@ -70,6 +71,8 @@ class PakFwaBot(commands.Bot):
                 if self.state.database.connected:
                     self._schedule_background_task(run_war_monitor(self), "war monitor")
                     self._schedule_background_task(run_autorole_loop(self), "autorole sync")
+                    self._schedule_background_task(run_clan_dashboard_loop(self), "clan dashboard")
+                    self._schedule_background_task(run_clan_activity_loop(self), "clan activity tracker")
 
     def _schedule_background_task(self, awaitable: Any, label: str) -> None:
         task = asyncio.create_task(awaitable)

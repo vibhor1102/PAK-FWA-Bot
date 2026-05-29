@@ -5,5 +5,7 @@
 - Keep secrets out of logs and settings output.
 - Put Postgres access behind `bot/database.py`.
 - Add new settings through shared helpers, not ad hoc checks.
-- ClashPerk is feature inspiration only; keep this bot in the Python ecosystem.
+- New features should update settings/help when relevant.
+- ClashPerk (https://github.com/clashperk/clashperk) provides a good baseline for what features a general purpose but feature-rich CoC bot would have.
+- ClashPerk is feature inspiration only; keep this bot in the Python ecosystem, and more tailored to the specific FWA requirements.
 - Keep changes small and docs in sync.

@@ -9,6 +9,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - `bot/features.py` and `bot/registry.py` gate commands by deployment target.
 - `bot/database.py` wraps PostgreSQL access.
 - `bot/coc_service.py` manages Clash of Clans API access for clan reporting.
+- `bot/clan_dashboard.py` renders persistent clan dashboards and tracks estimated activity.
 - `bot/commands/` holds slash-command modules.
 - `bot/resolver.py` resolves explicit, channel, server, and user-linked Clash tags for commands.
 - `bot/settings_data.py` powers the safe `/settings` HTTP route and the slash settings hub's system page.
@@ -23,6 +24,7 @@ A configurable Python Discord bot scaffold with local `.env` support, Render pro
 - A `/settings` slash setup hub and matching safe `/settings` HTTP route.
 - `/setup`, `/link`, `/profile`, `/player`, `/clan`, `/fwa`, and `/autorole` commands for Discord-first clan/player linking, lookup, active-war FWA instructions, and linked-account role sync.
 - Proactive war monitoring for linked clans, with `/setup announcements` choosing where the bot posts war/FWA updates.
+- Persistent clan dashboards via `/setup dashboard`, with public page/clan/sort controls and estimated activity pages backed by API polling.
 - Public FWA database lookups from `points.fwafarm.com`, public FWA Stats JSON exports from `fwastats.com`, and best-effort clan status lookups from `cc.fwafarm.com`.
 - An `aiohttp` web server with:
   - `GET /` for a simple awake message.
@@ -59,6 +61,10 @@ Configure these locally in `.env` and in Render under **Web Service > Environmen
 | `EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE` | Optional | Your preference | Per-server manual FWA/points burst limit. Defaults to `12`. |
 | `AUTOROLE_SYNC_INTERVAL_SECONDS` | Optional | Your preference | How often linked-player autoroles are synced in the background. Defaults to `1800`. |
 | `AUTOROLE_RETENTION_DAYS` | Optional | Your preference | Highest observed clan rank retention window for autorole grace. Defaults to `3`. |
+| `CLAN_DASHBOARD_REFRESH_SECONDS` | Optional | Your preference | How often persistent dashboard messages are edited. Defaults to `300`. |
+| `CLAN_DASHBOARD_INTERACTION_RESET_MINUTES` | Optional | Your preference | Default inactivity window before a dashboard returns to its configured page. Defaults to `20`. |
+| `CLAN_ACTIVITY_RETENTION_DAYS` | Optional | Your preference | How long estimated activity history should be kept for display and rollups. Defaults to `45`. |
+| `CLAN_ACTIVITY_POLL_SECONDS` | Optional | Your preference | How often dashboard/server clans are polled for activity signals. Defaults to `900`. |
 
 `DISCORD_CLIENT_ID` is not required by this Python architecture because `discord.py` can sync application commands through the logged-in bot token.
 
@@ -88,7 +94,8 @@ After deploy, your service URL should return a simple response at `/`, JSON at `
 6. Add `DATABASE_URL` with your Supabase production pooler connection string.
 7. Keep `DATABASE_POOL_MIN_SIZE=0` and `DATABASE_POOL_MAX_SIZE=3` unless your database plan supports more concurrent sessions.
 8. Add `COC_EMAIL` and `COC_PASSWORD` from your Supercell developer portal account for Clash API-backed commands. `coc.py` can create the API keys for you automatically once those credentials are present. Use `COC_TOKENS` only if you are using pre-created tokens, and `COC_KEY_NAME` / `COC_KEY_NAMES` to label the generated keys.
-9. Save changes and redeploy/restart the service.
+9. Optional: tune `CLAN_DASHBOARD_REFRESH_SECONDS`, `CLAN_ACTIVITY_POLL_SECONDS`, and dashboard reset/retention values if the defaults are too chatty or too slow.
+10. Save changes and redeploy/restart the service.
 
 Do not add your token to `.env.example`, `README.md`, or any committed file.
 
@@ -113,13 +120,20 @@ You said you can manage these, but make sure the following are done:
 6. If `/help` does not appear immediately, confirm the bot was invited with `applications.commands` and that `DISCORD_GUILD_ID` matches your test server.
 7. If Clash API-backed commands say Clash of Clans is not configured, make sure `COC_EMAIL` and `COC_PASSWORD` are present locally and in Render, or provide `COC_TOKENS` if you are using pre-created tokens.
 8. Use `/setup clan` to set a server or channel default clan, then `/setup announcements` to choose where proactive war updates should post.
-9. Use `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, and `/fwa` can then reuse those defaults.
+9. Use `/setup dashboard` to create a persistent clan dashboard in a channel, and `/setup dashboard-remove` to disable one.
+10. Use `/link create` and `/link verify` for player/user defaults. `/clan`, `/player`, `/profile`, and `/fwa` can then reuse those defaults.
 
 ## Proactive war monitor
 
 The bot polls linked server clans in the background once `DATABASE_URL` and Clash API credentials are configured. The official Clash of Clans API is the source of truth for active wars and war start times. FWA Stats and `points.fwafarm.com` are only queried during the configured early-war window after CoC confirms the match, so normal background checks do not continuously hit community endpoints.
 
 Use `/setup announcements` to set the channel for proactive posts. The monitor announces newly detected active wars, posts copy-ready FWA instructions when FWA Stats plus points data are available inside the lookup window, and records war snapshots for later command use. `/fwa` reuses the stored snapshot for the current war before attempting a guarded live refresh. Manual refreshes allow short human bursts but apply same-clan, per-user, and per-server limits to protect community endpoints.
+
+## Persistent clan dashboard
+
+Use `/setup dashboard` to create or update one persistent clan message in a channel. The bot stores the Discord message ID in Postgres, rehydrates the view after restarts, edits the same message on a timer, and recreates it only if Discord reports the old message missing.
+
+Dashboard pages include overview, members, Discord links, estimated activity, donations, capital, Clan Games, and War/FWA. Member-heavy pages use monospace tables with public controls for clan switching, page switching, sorting, and refresh. Activity and last-seen values are estimates from official API polling signals such as donations, trophy changes, war preference changes, Clan Games progress, and available capital data; they are not true Discord or in-game online presence.
 
 ## Autorole
 

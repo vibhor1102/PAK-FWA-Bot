@@ -44,6 +44,10 @@ class AppConfig:
     external_lookup_guild_burst_per_minute: int
     autorole_sync_interval_seconds: int
     autorole_retention_days: int
+    clan_dashboard_refresh_seconds: int
+    clan_dashboard_interaction_reset_minutes: int
+    clan_activity_retention_days: int
+    clan_activity_poll_seconds: int
 
     @classmethod
     def from_environment(cls) -> "AppConfig":
@@ -85,6 +89,13 @@ class AppConfig:
         external_lookup_guild_burst_per_minute = _read_positive_int("EXTERNAL_LOOKUP_GUILD_BURST_PER_MINUTE", 12)
         autorole_sync_interval_seconds = _read_positive_int("AUTOROLE_SYNC_INTERVAL_SECONDS", 1800)
         autorole_retention_days = _read_positive_int("AUTOROLE_RETENTION_DAYS", 3)
+        clan_dashboard_refresh_seconds = _read_positive_int("CLAN_DASHBOARD_REFRESH_SECONDS", 300)
+        clan_dashboard_interaction_reset_minutes = _read_positive_int(
+            "CLAN_DASHBOARD_INTERACTION_RESET_MINUTES",
+            20,
+        )
+        clan_activity_retention_days = _read_positive_int("CLAN_ACTIVITY_RETENTION_DAYS", 45)
+        clan_activity_poll_seconds = _read_positive_int("CLAN_ACTIVITY_POLL_SECONDS", 900)
         if fwa_external_lookup_end_hours <= fwa_external_lookup_start_hours:
             raise RuntimeError("FWA_EXTERNAL_LOOKUP_END_HOURS must be greater than FWA_EXTERNAL_LOOKUP_START_HOURS")
 
@@ -114,6 +125,10 @@ class AppConfig:
             external_lookup_guild_burst_per_minute=external_lookup_guild_burst_per_minute,
             autorole_sync_interval_seconds=autorole_sync_interval_seconds,
             autorole_retention_days=autorole_retention_days,
+            clan_dashboard_refresh_seconds=clan_dashboard_refresh_seconds,
+            clan_dashboard_interaction_reset_minutes=clan_dashboard_interaction_reset_minutes,
+            clan_activity_retention_days=clan_activity_retention_days,
+            clan_activity_poll_seconds=clan_activity_poll_seconds,
         )
 
 

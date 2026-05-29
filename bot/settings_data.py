@@ -104,6 +104,18 @@ def build_settings_snapshot(
             ],
         },
         {
+            "title": "Clan Dashboard",
+            "items": [
+                ("Enabled", yes_no(state.database.connected and state.coc_service.configured)),
+                ("Refresh interval", f"{config.clan_dashboard_refresh_seconds}s"),
+                ("Activity poll", f"{config.clan_activity_poll_seconds}s"),
+                ("Activity retention", f"{config.clan_activity_retention_days} days"),
+                ("Default reset", f"{config.clan_dashboard_interaction_reset_minutes} minutes"),
+                ("Dashboards", str((linking_counts or {}).get("clan_dashboards", 0))),
+                ("Activity events", str((linking_counts or {}).get("clan_activity_events", 0))),
+            ],
+        },
+        {
             "title": "Linking",
             "items": [
                 ("Ready", yes_no(state.database.connected)),

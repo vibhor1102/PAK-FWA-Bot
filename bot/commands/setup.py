@@ -4,6 +4,7 @@ import coc
 import discord
 from discord import app_commands
 
+from ..clan_dashboard import PAGE_LABELS, ensure_dashboard_message, normalize_page
 from ..coc_service import CocConfigurationError
 from ..resolver import clash_profile_url, normalize_tag
 
@@ -272,4 +273,121 @@ def build_setup_group() -> app_commands.Group:
             ephemeral=True,
         )
 
+    @group.command(name="dashboard", description="Create or update a persistent clan dashboard message.")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.describe(channel="Channel where the persistent dashboard message should live.")
+    @app_commands.describe(default_clan="Default clan tag or linked alias.")
+    @app_commands.describe(additional_clans="Optional comma-separated clan tags or linked aliases.")
+    @app_commands.describe(default_page=f"Default page: {', '.join(PAGE_LABELS)}.")
+    @app_commands.describe(reset_minutes="Minutes before public controls return to the default page.")
+    @app_commands.describe(show_public_controls="Show dropdowns/buttons on the persistent message.")
+    async def setup_dashboard(
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | discord.Thread,
+        default_clan: str,
+        additional_clans: str | None = None,
+        default_page: str = "overview",
+        reset_minutes: int = 20,
+        show_public_controls: bool = True,
+    ) -> None:
+        if not _require_guild(interaction):
+            await interaction.response.send_message("Dashboard setup can only be used inside a Discord server.", ephemeral=True)
+            return
+        if reset_minutes < 1:
+            await interaction.response.send_message("reset_minutes must be at least 1.", ephemeral=True)
+            return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        try:
+            client = await interaction.client.state.coc_service.get_client()  # type: ignore[attr-defined]
+            clan_tags = await _resolve_dashboard_tags(
+                interaction,
+                default_clan=default_clan,
+                additional_clans=additional_clans,
+            )
+            clans = []
+            for tag in clan_tags:
+                clans.append(await client.get_clan(tag))
+            dashboard = await interaction.client.state.database.upsert_clan_dashboard(  # type: ignore[attr-defined]
+                guild_id=interaction.guild_id,
+                channel_id=channel.id,
+                message_id=None,
+                default_clan_tag=clans[0].tag,
+                default_page=normalize_page(default_page),
+                selected_clan_tags=[clan.tag for clan in clans],
+                reset_minutes=reset_minutes,
+                show_public_controls=show_public_controls,
+            )
+            await ensure_dashboard_message(interaction.client, dashboard)  # type: ignore[arg-type]
+            dashboard = await interaction.client.state.database.get_clan_dashboard_by_channel(  # type: ignore[attr-defined]
+                guild_id=interaction.guild_id,
+                channel_id=channel.id,
+            ) or dashboard
+        except coc.NotFound:
+            await interaction.followup.send("One of those clans could not be found by the Clash API.", ephemeral=True)
+            return
+        except (ValueError, CocConfigurationError, RuntimeError) as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            (
+                f"Dashboard is active in {channel.mention} with {len(dashboard['selected_clan_tags'])} clan(s). "
+                f"Message ID: `{dashboard.get('message_id') or 'pending'}`."
+            ),
+            ephemeral=True,
+        )
+
+    @group.command(name="dashboard-remove", description="Disable a persistent clan dashboard.")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.describe(channel="Dashboard channel to disable. Defaults to this channel.")
+    async def setup_dashboard_remove(
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | discord.Thread | None = None,
+    ) -> None:
+        if not _require_guild(interaction):
+            await interaction.response.send_message("Dashboard setup can only be used inside a Discord server.", ephemeral=True)
+            return
+
+        target_channel_id = channel.id if channel else interaction.channel_id
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        try:
+            removed = await interaction.client.state.database.disable_clan_dashboard(  # type: ignore[attr-defined]
+                guild_id=interaction.guild_id,
+                channel_id=target_channel_id,
+            )
+        except RuntimeError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        if removed is None:
+            await interaction.followup.send("No active dashboard was found for that channel.", ephemeral=True)
+            return
+        await interaction.followup.send(f"Disabled the clan dashboard in <#{removed['channel_id']}>.", ephemeral=True)
+
     return group
+
+
+async def _resolve_dashboard_tags(
+    interaction: discord.Interaction,
+    *,
+    default_clan: str,
+    additional_clans: str | None,
+) -> list[str]:
+    values = [default_clan]
+    if additional_clans:
+        values.extend(item.strip() for item in additional_clans.split(",") if item.strip())
+    tags: list[str] = []
+    for value in values:
+        try:
+            tag = normalize_tag(value)
+        except ValueError:
+            linked = await interaction.client.state.database.find_server_clan(  # type: ignore[attr-defined]
+                guild_id=interaction.guild_id,
+                query=value,
+            )
+            if linked is None:
+                raise ValueError(f"`{value}` is not a valid clan tag or linked clan alias.")
+            tag = linked["clan_tag"]
+        if tag not in tags:
+            tags.append(tag)
+    return tags
