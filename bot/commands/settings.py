@@ -343,9 +343,10 @@ def build_settings_command() -> app_commands.Command[Any, ..., None]:
             await interaction.response.send_message("Settings are unavailable right now.", ephemeral=True)
             return
 
+        await interaction.response.defer(thinking=True, ephemeral=True)
         data = await load_settings_data(bot, interaction)
         view = SettingsHubView(bot, interaction.user, data, available_pages(interaction))
-        await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
+        await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True)
 
     return app_commands.Command(
         name="settings",
